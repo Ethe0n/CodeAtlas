@@ -8,65 +8,467 @@ namespace CodeAtlas.Roslyn;
 
 public sealed class VbSyntaxStructureExtractor
 {
-    public IReadOnlyList<TypeStructure> Extract(SyntaxNode root, string? filePath)
+    private readonly ControlFlowAnalyzer _controlFlowAnalyzer = new();
+
+    public IReadOnlyList<TypeStructure> ExtractTypes(
+        SyntaxNode root,
+        SemanticModel semanticModel,
+        string? filePath,
+        string? projectDirectory)
     {
+        var isDesignerDocument = IsDesignerDocument(filePath);
+
         return root
             .DescendantNodes()
             .OfType<ClassBlockSyntax>()
-            .Select(classBlock => ExtractClass(classBlock, filePath))
+            .Select(classBlock => ExtractClass(classBlock, semanticModel, filePath, projectDirectory, isDesignerDocument))
+            .Where(type => type is not null)
+            .Select(type => type!)
             .ToArray();
     }
 
-    private static TypeStructure ExtractClass(ClassBlockSyntax classBlock, string? filePath)
+    public IReadOnlyList<CallRelation> ExtractCalls(
+        SyntaxNode root,
+        SemanticModel semanticModel,
+        Compilation compilation,
+        string? filePath,
+        string? projectDirectory)
     {
-        var className = classBlock.ClassStatement.Identifier.ValueText;
-        var namespaceName = GetNamespaceName(classBlock);
-        var fullName = string.IsNullOrWhiteSpace(namespaceName)
-            ? className
-            : $"{namespaceName}.{className}";
+        var isDesignerDocument = IsDesignerDocument(filePath);
 
-        var methods = classBlock.Members
+        return root
+            .DescendantNodes()
             .OfType<MethodBlockSyntax>()
-            .Select(methodBlock => ExtractMethod(methodBlock, filePath))
+            .SelectMany(methodBlock => ExtractMethodCalls(methodBlock, semanticModel, compilation, filePath, projectDirectory, isDesignerDocument))
+            .ToArray();
+    }
+
+    public IReadOnlyList<ControlFlowInfo> ExtractControlFlows(
+        SyntaxNode root,
+        SemanticModel semanticModel,
+        string? filePath)
+    {
+        var isDesignerDocument = IsDesignerDocument(filePath);
+
+        return root
+            .DescendantNodes()
+            .OfType<MethodBlockSyntax>()
+            .Select(methodBlock =>
+            {
+                var statement = methodBlock.SubOrFunctionStatement;
+                if (semanticModel.GetDeclaredSymbol(statement) is not IMethodSymbol methodSymbol)
+                {
+                    return null;
+                }
+
+                var methodSyntax = methodBlock.SyntaxTree.GetRoot().FindNode(methodBlock.GetLocation().SourceSpan);
+                var isGenerated = isDesignerDocument || IsGenerated(methodSyntax, methodSymbol);
+                return _controlFlowAnalyzer.Analyze(methodBlock, semanticModel, isGenerated);
+            })
+            .Where(controlFlow => controlFlow is not null)
+            .Select(controlFlow => controlFlow!)
+            .ToArray();
+    }
+
+    private static TypeStructure? ExtractClass(
+        ClassBlockSyntax classBlock,
+        SemanticModel semanticModel,
+        string? filePath,
+        string? projectDirectory,
+        bool isDesignerDocument)
+    {
+        if (semanticModel.GetDeclaredSymbol(classBlock.ClassStatement) is not INamedTypeSymbol typeSymbol)
+        {
+            return null;
+        }
+
+        var extractedMethods = classBlock.Members
+            .OfType<MethodBlockSyntax>()
+            .Select(methodBlock => ExtractMethod(methodBlock, semanticModel, filePath, projectDirectory, isDesignerDocument))
+            .Where(method => method is not null)
+            .Select(method => method!)
+            .ToArray();
+
+        var methods = extractedMethods
+            .Where(method => !method.IsGenerated)
+            .ToArray();
+
+        var generatedMethods = extractedMethods
+            .Where(method => method.IsGenerated)
+            .ToArray();
+
+        var members = typeSymbol.GetMembers();
+
+        var fields = isDesignerDocument
+            ? Array.Empty<FieldStructure>()
+            : members
+                .SelectMany(member => ExtractFieldLikeMember(member, classBlock, filePath, projectDirectory))
+                .Where(field => !field.IsGenerated)
+                .ToArray();
+
+        var properties = isDesignerDocument
+            ? Array.Empty<PropertyStructure>()
+            : members
+                .OfType<IPropertySymbol>()
+                .Select(property => ExtractProperty(property, classBlock, filePath, projectDirectory))
+                .Where(property => property is not null && !property.IsGenerated)
+                .Select(property => property!)
+                .ToArray();
+
+        var uiControls = isDesignerDocument
+            ? ExtractUiControls(classBlock, semanticModel, filePath, projectDirectory).ToArray()
+            : Array.Empty<UiControlInfo>();
+
+        var uiEventHandlers = classBlock.Members
+            .OfType<MethodBlockSyntax>()
+            .SelectMany(methodBlock => ExtractUiEventHandlers(methodBlock, semanticModel, filePath, projectDirectory))
             .ToArray();
 
         return new TypeStructure(
-            className,
-            fullName,
-            namespaceName,
-            filePath,
+            typeSymbol.Name,
+            typeSymbol.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat),
+            GetSymbolId(typeSymbol),
+            typeSymbol.ContainingNamespace?.IsGlobalNamespace == false
+                ? typeSymbol.ContainingNamespace.ToDisplayString()
+                : null,
+            filePath is null ? Array.Empty<string>() : new[] { ToProjectRelativePath(filePath, projectDirectory) },
             ToSpanInfo(classBlock.GetLocation().GetLineSpan()),
-            methods);
+            fields,
+            properties,
+            methods,
+            generatedMethods,
+            uiControls,
+            uiEventHandlers);
     }
 
-    private static MethodStructure ExtractMethod(MethodBlockSyntax methodBlock, string? filePath)
+    private static IEnumerable<FieldStructure> ExtractFieldLikeMember(
+        ISymbol member,
+        ClassBlockSyntax classBlock,
+        string? filePath,
+        string? projectDirectory)
+    {
+        if (member is IFieldSymbol { IsImplicitlyDeclared: false } fieldSymbol)
+        {
+            var location = GetSourceLocationInFile(fieldSymbol, filePath);
+            if (location is null)
+            {
+                yield break;
+            }
+
+            var syntax = classBlock.SyntaxTree.GetRoot().FindNode(location.SourceSpan);
+            var relativePath = ToProjectRelativePath(location.GetLineSpan().Path, projectDirectory);
+            yield return new FieldStructure(
+                fieldSymbol.Name,
+                fieldSymbol.Type.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat),
+                ToAccessibility(fieldSymbol.DeclaredAccessibility),
+                fieldSymbol.IsStatic,
+                relativePath,
+                IsGenerated(syntax, fieldSymbol),
+                ToSpanInfo(location.GetLineSpan()));
+        }
+        else if (member is IEventSymbol { IsImplicitlyDeclared: false } eventSymbol)
+        {
+            var location = GetSourceLocationInFile(eventSymbol, filePath);
+            if (location is null)
+            {
+                yield break;
+            }
+
+            var syntax = classBlock.SyntaxTree.GetRoot().FindNode(location.SourceSpan);
+            var relativePath = ToProjectRelativePath(location.GetLineSpan().Path, projectDirectory);
+            yield return new FieldStructure(
+                eventSymbol.Name,
+                eventSymbol.Type.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat),
+                ToAccessibility(eventSymbol.DeclaredAccessibility),
+                eventSymbol.IsStatic,
+                relativePath,
+                IsGenerated(syntax, eventSymbol),
+                ToSpanInfo(location.GetLineSpan()));
+        }
+    }
+
+    private static PropertyStructure? ExtractProperty(
+        IPropertySymbol propertySymbol,
+        ClassBlockSyntax classBlock,
+        string? filePath,
+        string? projectDirectory)
+    {
+        if (propertySymbol.IsImplicitlyDeclared)
+        {
+            return null;
+        }
+
+        var location = GetSourceLocationInFile(propertySymbol, filePath);
+        if (location is null)
+        {
+            return null;
+        }
+
+        var syntax = classBlock.SyntaxTree.GetRoot().FindNode(location.SourceSpan);
+        var relativePath = ToProjectRelativePath(location.GetLineSpan().Path, projectDirectory);
+        return new PropertyStructure(
+            propertySymbol.Name,
+            propertySymbol.Type.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat),
+            ToAccessibility(propertySymbol.DeclaredAccessibility),
+            propertySymbol.IsStatic,
+            propertySymbol.GetMethod is not null && propertySymbol.SetMethod is null,
+            propertySymbol.SetMethod is not null && propertySymbol.GetMethod is null,
+            relativePath,
+            IsGenerated(syntax, propertySymbol),
+            ToSpanInfo(location.GetLineSpan()));
+    }
+
+    private static MethodStructure? ExtractMethod(
+        MethodBlockSyntax methodBlock,
+        SemanticModel semanticModel,
+        string? filePath,
+        string? projectDirectory,
+        bool isDesignerDocument)
     {
         var statement = methodBlock.SubOrFunctionStatement;
+        if (semanticModel.GetDeclaredSymbol(statement) is not IMethodSymbol methodSymbol)
+        {
+            return null;
+        }
+
         var kind = statement.DeclarationKeyword.IsKind(SyntaxKind.FunctionKeyword)
             ? VbMethodKind.Function
             : VbMethodKind.Sub;
 
+        var location = GetSourceLocationInFile(methodSymbol, filePath)
+            ?? methodBlock.GetLocation();
+        var syntax = methodBlock.SyntaxTree.GetRoot().FindNode(location.SourceSpan);
+
         return new MethodStructure(
-            statement.Identifier.ValueText,
+            methodSymbol.Name,
+            GetSymbolId(methodSymbol),
+            GetSymbolId(methodSymbol.ContainingType),
             kind,
-            GetAccessibility(statement.Modifiers),
-            filePath,
-            ToSpanInfo(methodBlock.GetLocation().GetLineSpan()));
+            ToAccessibility(methodSymbol.DeclaredAccessibility),
+            ToProjectRelativePath(location.GetLineSpan().Path, projectDirectory),
+            isDesignerDocument || IsGenerated(syntax, methodSymbol),
+            ToSpanInfo(location.GetLineSpan()));
     }
 
-    private static string? GetNamespaceName(SyntaxNode node)
+    private static IEnumerable<CallRelation> ExtractMethodCalls(
+        MethodBlockSyntax methodBlock,
+        SemanticModel semanticModel,
+        Compilation compilation,
+        string? filePath,
+        string? projectDirectory,
+        bool isDesignerDocument)
     {
-        var namespaces = node
-            .Ancestors()
-            .OfType<NamespaceBlockSyntax>()
-            .Reverse()
-            .Select(namespaceBlock => namespaceBlock.NamespaceStatement.Name.ToString())
-            .Where(name => !string.IsNullOrWhiteSpace(name))
-            .ToArray();
+        var statement = methodBlock.SubOrFunctionStatement;
+        if (semanticModel.GetDeclaredSymbol(statement) is not IMethodSymbol callerSymbol)
+        {
+            yield break;
+        }
 
-        return namespaces.Length == 0
-            ? null
-            : string.Join(".", namespaces);
+        var callerSyntax = methodBlock.SyntaxTree.GetRoot().FindNode(methodBlock.GetLocation().SourceSpan);
+        if (isDesignerDocument || IsGenerated(callerSyntax, callerSymbol))
+        {
+            yield break;
+        }
+
+        foreach (var invocation in methodBlock.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        {
+            var calleeSymbol = ResolveMethodSymbol(invocation, semanticModel);
+            if (calleeSymbol is null)
+            {
+                continue;
+            }
+
+            yield return new CallRelation(
+                GetSymbolId(callerSymbol),
+                callerSymbol.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat),
+                GetSymbolId(calleeSymbol),
+                calleeSymbol.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat),
+                IsProjectInternal(calleeSymbol, compilation),
+                calleeSymbol.ContainingAssembly?.Name,
+                filePath is null ? null : ToProjectRelativePath(filePath, projectDirectory),
+                ToSpanInfo(invocation.GetLocation().GetLineSpan()));
+        }
+    }
+
+    private static IEnumerable<UiControlInfo> ExtractUiControls(
+        ClassBlockSyntax classBlock,
+        SemanticModel semanticModel,
+        string? filePath,
+        string? projectDirectory)
+    {
+        foreach (var fieldDeclaration in classBlock.Members.OfType<FieldDeclarationSyntax>())
+        {
+            foreach (var declarator in fieldDeclaration.Declarators)
+            {
+                if (declarator.AsClause is not SimpleAsClauseSyntax asClause)
+                {
+                    continue;
+                }
+
+                var type = semanticModel.GetTypeInfo(asClause.Type).Type;
+                if (type is null || !IsWinFormsControlType(type))
+                {
+                    continue;
+                }
+
+                foreach (var name in declarator.Names)
+                {
+                    yield return new UiControlInfo(
+                        name.Identifier.ValueText,
+                        type.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat),
+                        filePath is null ? null : ToProjectRelativePath(filePath, projectDirectory));
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<UiEventHandlerInfo> ExtractUiEventHandlers(
+        MethodBlockSyntax methodBlock,
+        SemanticModel semanticModel,
+        string? filePath,
+        string? projectDirectory)
+    {
+        var statement = methodBlock.SubOrFunctionStatement;
+        if (statement.HandlesClause is null ||
+            semanticModel.GetDeclaredSymbol(statement) is not IMethodSymbol methodSymbol)
+        {
+            yield break;
+        }
+
+        foreach (var handledEvent in statement.HandlesClause.Events)
+        {
+            var eventPath = handledEvent.ToString();
+            var separatorIndex = eventPath.LastIndexOf('.');
+            if (separatorIndex <= 0 || separatorIndex == eventPath.Length - 1)
+            {
+                continue;
+            }
+
+            yield return new UiEventHandlerInfo(
+                eventPath[..separatorIndex],
+                eventPath[(separatorIndex + 1)..],
+                methodSymbol.Name,
+                GetSymbolId(methodSymbol),
+                filePath is null ? null : ToProjectRelativePath(filePath, projectDirectory));
+        }
+    }
+
+    private static bool IsWinFormsControlType(ITypeSymbol typeSymbol)
+    {
+        for (var current = typeSymbol; current is not null; current = current.BaseType)
+        {
+            if (current.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat) == "System.Windows.Forms.Control")
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static IMethodSymbol? ResolveMethodSymbol(
+        InvocationExpressionSyntax invocation,
+        SemanticModel semanticModel)
+    {
+        var symbolInfo = semanticModel.GetSymbolInfo(invocation);
+        var methodSymbol = symbolInfo.Symbol as IMethodSymbol
+            ?? symbolInfo.CandidateSymbols.OfType<IMethodSymbol>().FirstOrDefault();
+
+        return methodSymbol?.ReducedFrom ?? methodSymbol;
+    }
+
+    private static bool IsProjectInternal(IMethodSymbol methodSymbol, Compilation compilation)
+    {
+        return SymbolEqualityComparer.Default.Equals(methodSymbol.ContainingAssembly, compilation.Assembly)
+            && methodSymbol.Locations.Any(location => location.IsInSource);
+    }
+
+    private static string GetSymbolId(ISymbol symbol)
+    {
+        return symbol.GetDocumentationCommentId()
+            ?? symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+    }
+
+    private static Location? GetSourceLocationInFile(ISymbol symbol, string? filePath)
+    {
+        return symbol.Locations.FirstOrDefault(location =>
+            location.IsInSource &&
+            (string.IsNullOrWhiteSpace(filePath) ||
+             string.Equals(location.GetLineSpan().Path, filePath, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private static string ToProjectRelativePath(string filePath, string? projectDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(projectDirectory))
+        {
+            return filePath;
+        }
+
+        return Path.GetRelativePath(projectDirectory, filePath);
+    }
+
+    private static bool IsGenerated(SyntaxNode syntax, ISymbol symbol)
+    {
+        return HasGeneratedAttribute(symbol)
+            || syntax.AncestorsAndSelf().Any(HasGeneratedAttribute);
+    }
+
+    private static bool IsDesignerDocument(string? filePath)
+    {
+        return filePath is not null &&
+            filePath.EndsWith(".Designer.vb", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HasGeneratedAttribute(ISymbol symbol)
+    {
+        return symbol.GetAttributes().Any(attribute => IsGeneratedAttributeName(attribute.AttributeClass?.Name));
+    }
+
+    private static bool HasGeneratedAttribute(SyntaxNode syntax)
+    {
+        var attributeLists = syntax switch
+        {
+            ClassBlockSyntax classBlock => classBlock.ClassStatement.AttributeLists,
+            FieldDeclarationSyntax field => field.AttributeLists,
+            MethodBlockSyntax methodBlock => methodBlock.SubOrFunctionStatement.AttributeLists,
+            MethodStatementSyntax method => method.AttributeLists,
+            PropertyStatementSyntax property => property.AttributeLists,
+            PropertyBlockSyntax propertyBlock => propertyBlock.PropertyStatement.AttributeLists,
+            _ => default
+        };
+
+        return attributeLists
+            .SelectMany(attributeList => attributeList.Attributes)
+            .Any(attribute => IsGeneratedAttributeName(attribute.Name.ToString()));
+    }
+
+    private static bool IsGeneratedAttributeName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return false;
+        }
+
+        return name.EndsWith("Generated", StringComparison.OrdinalIgnoreCase)
+            || name.EndsWith("GeneratedAttribute", StringComparison.OrdinalIgnoreCase)
+            || name.EndsWith("DesignerGenerated", StringComparison.OrdinalIgnoreCase)
+            || name.EndsWith("DesignerGeneratedAttribute", StringComparison.OrdinalIgnoreCase)
+            || name.EndsWith("CompilerGenerated", StringComparison.OrdinalIgnoreCase)
+            || name.EndsWith("CompilerGeneratedAttribute", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ToAccessibility(Accessibility accessibility)
+    {
+        return accessibility switch
+        {
+            Accessibility.Public => "Public",
+            Accessibility.Protected => "Protected",
+            Accessibility.Internal => "Friend",
+            Accessibility.ProtectedOrInternal => "Protected Friend",
+            Accessibility.Private => "Private",
+            Accessibility.ProtectedAndInternal => "Private Protected",
+            _ => "Unspecified"
+        };
     }
 
     private static string GetAccessibility(SyntaxTokenList modifiers)

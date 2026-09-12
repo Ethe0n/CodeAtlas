@@ -10,8 +10,11 @@
 *.userosscache
 *.sln.docstates
 *.env
+*.sample.json
 
 # Local .NET CLI cache generated when DOTNET_CLI_HOME is pointed at the repo
+.dotnet/
+.nuget/
 CodeAtlas/.dotnet/
 CodeAtlas/.nuget/
 

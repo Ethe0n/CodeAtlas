@@ -5,4 +5,6 @@ public sealed record ProjectStructure(
     string Name,
     string? FilePath,
     string Language,
-    IReadOnlyList<TypeStructure> Types);
+    IReadOnlyList<TypeStructure> Types,
+    IReadOnlyList<CallRelation> Calls,
+    IReadOnlyList<ControlFlowInfo> ControlFlows);
