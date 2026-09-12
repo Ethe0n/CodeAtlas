@@ -26,18 +26,18 @@
   End Sub
 
   Public Function TestFlow(value As Integer) As Integer
+
     If value > 10 Then
       value = value * 2
     Else
       value = value + 1
     End If
 
-    Dim index As Integer = 0
-    While index < 2
-      value = value + index
-      index = index + 1
-    End While
+    For i As Integer = 0 To 2
+      value += i
+    Next
 
     Return value
+
   End Function
 End Class

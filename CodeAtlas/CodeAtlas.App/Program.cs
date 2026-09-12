@@ -87,7 +87,7 @@ foreach (var project in structure.Projects)
             Console.WriteLine($"    Generated Methods: {string.Join(", ", type.GeneratedMethods.Select(method => method.Name))}");
         }
     }
-
+     
     Console.WriteLine("  Calls:");
     foreach (var call in project.Calls)
     {
