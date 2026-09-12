@@ -11,6 +11,10 @@
 *.sln.docstates
 *.env
 
+# Local .NET CLI cache generated when DOTNET_CLI_HOME is pointed at the repo
+CodeAtlas/.dotnet/
+CodeAtlas/.nuget/
+
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
 
