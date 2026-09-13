@@ -239,11 +239,17 @@ public sealed class MainForm : Form
 
     private void ShowMethodCalls(MethodNodeContext context)
     {
-        var calls = context.Project.Calls
+        var outgoingCalls = context.Project.Calls
             .Where(call => call.CallerMethodSymbolId == context.Method.SymbolId)
             .ToArray();
+        var incomingCalls = context.Project.Calls
+            .Where(call =>
+                call.IsProjectInternal &&
+                call.CalleeMethodSymbolId == context.Method.SymbolId &&
+                call.CallerMethodSymbolId != context.Method.SymbolId)
+            .ToArray();
 
-        _callGraphView.ShowGraph(context.Method, calls);
+        _callGraphView.ShowGraph(context.Method, incomingCalls, outgoingCalls);
     }
 
     private void ShowControlFlow(MethodNodeContext context)

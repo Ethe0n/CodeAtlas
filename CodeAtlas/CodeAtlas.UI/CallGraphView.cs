@@ -12,7 +12,7 @@ public sealed class CallGraphView : UserControl
   private readonly System.Windows.Forms.Label _emptyLabel = new()
   {
     Dock = DockStyle.Fill,
-    Text = "No outgoing calls",
+    Text = "No calls available",
     TextAlign = ContentAlignment.MiddleCenter
   };
 
@@ -29,7 +29,10 @@ public sealed class CallGraphView : UserControl
     ClearGraph();
   }
 
-  public void ShowGraph(MethodStructure method, IReadOnlyList<CallRelation> outgoingCalls)
+  public void ShowGraph(
+    MethodStructure method,
+    IReadOnlyList<CallRelation> incomingCalls,
+    IReadOnlyList<CallRelation> outgoingCalls)
   {
     var graph = new Graph(method.Name)
     {
@@ -41,32 +44,50 @@ public sealed class CallGraphView : UserControl
     var currentNode = graph.AddNode(currentNodeId);
     ConfigureCurrentMethodNode(currentNode, method);
 
-
-    var groupedCalls = outgoingCalls
-    .GroupBy(call => GetCallNodeId(call));
-
-    foreach (var group in groupedCalls)
+    foreach (var group in incomingCalls.GroupBy(GetCallerNodeId))
     {
       var call = group.First();
       var callCount = group.Count();
 
-      var calleeNodeId = GetCallNodeId(call);
-      var calleeNode = graph.FindNode(calleeNodeId) ?? graph.AddNode(calleeNodeId);
+      var callerNodeId = GetCallerNodeId(call);
+      var callerNode =
+          graph.FindNode(callerNodeId) ??
+          graph.AddNode(callerNodeId);
+
+      ConfigureCallerNode(callerNode, call);
+
+      var edge = graph.AddEdge(
+          callerNodeId,
+          FormatCallCount(callCount),
+          currentNodeId);
+
+      ConfigureCallerEdge(edge);
+
+      graph.LayerConstraints.AddUpDownConstraint(
+          callerNode,
+          currentNode);
+    }
+
+    foreach (var group in outgoingCalls.GroupBy(GetCalleeNodeId))
+    {
+      var call = group.First();
+      var callCount = group.Count();
+
+      var calleeNodeId = GetCalleeNodeId(call);
+      var calleeNode =
+          graph.FindNode(calleeNodeId) ??
+          graph.AddNode(calleeNodeId);
 
       ConfigureCalleeNode(calleeNode, call);
 
-      var edgeLabel = callCount > 1
-          ? $"¡¿{callCount}"
-          : string.Empty;
-
       var edge = graph.AddEdge(
           currentNodeId,
-          edgeLabel,
+          FormatCallCount(callCount),
           calleeNodeId);
 
-      ConfigureEdge(edge, call);
+      ConfigureCalleeEdge(edge, call);
 
-      graph.LayerConstraints.AddLeftRightConstraint(
+      graph.LayerConstraints.AddUpDownConstraint(
           currentNode,
           calleeNode);
     }
@@ -91,7 +112,7 @@ public sealed class CallGraphView : UserControl
     graph.Attr.LayerSeparation = 90;
     graph.Attr.MinNodeHeight = 42;
     graph.Attr.MinNodeWidth = 170;
-    graph.Attr.AspectRatio = 1.6;
+    graph.Attr.AspectRatio = 0;
 
     graph.LayoutAlgorithmSettings = new SugiyamaLayoutSettings
     {
@@ -99,12 +120,12 @@ public sealed class CallGraphView : UserControl
       LayerSeparation = 90,
       MinNodeHeight = 42,
       MinNodeWidth = 170,
-      AspectRatio = 1.6,
+      AspectRatio = 0,
       EdgeRoutingSettings =
-            {
-                EdgeRoutingMode = Microsoft.Msagl.Core.Routing.EdgeRoutingMode.SugiyamaSplines,
-                Padding = 10
-            }
+      {
+        EdgeRoutingMode = Microsoft.Msagl.Core.Routing.EdgeRoutingMode.Rectilinear,
+        Padding = 10
+      }
     };
   }
 
@@ -116,6 +137,16 @@ public sealed class CallGraphView : UserControl
     node.Attr.LineWidth = 2.2;
     node.Attr.Color = MsaglColor.MidnightBlue;
     node.Attr.FillColor = new MsaglColor(225, 237, 255);
+  }
+
+  private static void ConfigureCallerNode(Node node, CallRelation call)
+  {
+    node.LabelText = ShortCallName(call.CallerDisplayName);
+    node.Attr.Shape = Shape.Box;
+    node.Attr.Padding = 12;
+    node.Attr.LineWidth = 1.6;
+    node.Attr.Color = MsaglColor.DarkSlateBlue;
+    node.Attr.FillColor = new MsaglColor(237, 232, 255);
   }
 
   private static void ConfigureCalleeNode(Node node, CallRelation call)
@@ -132,7 +163,15 @@ public sealed class CallGraphView : UserControl
         : new MsaglColor(255, 244, 220);
   }
 
-  private static void ConfigureEdge(Edge edge, CallRelation call)
+  private static void ConfigureCallerEdge(Edge edge)
+  {
+    edge.Attr.ArrowheadAtTarget = ArrowStyle.Normal;
+    edge.Attr.ArrowheadLength = 10;
+    edge.Attr.LineWidth = 1.5;
+    edge.Attr.Color = MsaglColor.DarkSlateBlue;
+  }
+
+  private static void ConfigureCalleeEdge(Edge edge, CallRelation call)
   {
     edge.Attr.ArrowheadAtTarget = ArrowStyle.Normal;
     edge.Attr.ArrowheadLength = 10;
@@ -147,10 +186,20 @@ public sealed class CallGraphView : UserControl
     return $"method:{methodId}";
   }
 
-  private static string GetCallNodeId(CallRelation call)
+  private static string GetCallerNodeId(CallRelation call)
+  {
+    return $"caller:{call.CallerMethodSymbolId}";
+  }
+
+  private static string GetCalleeNodeId(CallRelation call)
   {
     var scope = call.IsProjectInternal ? "internal" : "external";
     return $"callee:{scope}:{call.CalleeMethodSymbolId}";
+  }
+
+  private static string FormatCallCount(int callCount)
+  {
+    return callCount > 1 ? $"x{callCount}" : string.Empty;
   }
 
   private static string ShortMethodName(string methodName)
