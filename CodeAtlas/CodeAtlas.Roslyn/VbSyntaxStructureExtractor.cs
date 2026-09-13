@@ -131,6 +131,7 @@ public sealed class VbSyntaxStructureExtractor
             typeSymbol.ContainingNamespace?.IsGlobalNamespace == false
                 ? typeSymbol.ContainingNamespace.ToDisplayString()
                 : null,
+            typeSymbol.ContainingType is null ? null : GetSymbolId(typeSymbol.ContainingType),
             typeSymbol.TypeKind.ToString(),
             ToAccessibility(typeSymbol.DeclaredAccessibility),
             typeSymbol.BaseType is null ? null : ToBaseTypeDisplayName(typeSymbol.BaseType),

@@ -5,6 +5,7 @@ public sealed record TypeStructure(
     string FullName,
     string SymbolId,
     string? Namespace,
+    string? ContainingTypeSymbolId,
     string Kind,
     string Accessibility,
     string? BaseType,

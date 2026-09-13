@@ -109,21 +109,52 @@ public sealed class MainForm : Form
         {
             var projectNode = new TreeNode(project.Name) { Tag = project };
             _projectExplorer.Nodes.Add(projectNode);
-
-            foreach (var type in project.Types)
-            {
-                var typeNode = new TreeNode(type.Name) { Tag = new TypeNodeContext(project, type) };
-                projectNode.Nodes.Add(typeNode);
-
-                AddFieldNodes(typeNode, type);
-                AddUiControlNodes(typeNode, type);
-                AddUiEventHandlerNodes(typeNode, type);
-                AddMethodNodes(typeNode, project, type);
-            }
+            AddTypeNodes(projectNode, project, project.Types);
         }
 
         _projectExplorer.ExpandAll();
         _projectExplorer.EndUpdate();
+    }
+
+    private static void AddTypeNodes(TreeNode parentNode, ProjectStructure project, IReadOnlyList<TypeStructure> types)
+    {
+        var nestedTypesByParent = types
+            .Where(type => type.ContainingTypeSymbolId is not null)
+            .GroupBy(type => type.ContainingTypeSymbolId!, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
+
+        foreach (var type in types.Where(type => type.ContainingTypeSymbolId is null))
+        {
+            AddTypeNode(parentNode, project, type, nestedTypesByParent);
+        }
+    }
+
+    private static void AddTypeNode(
+        TreeNode parentNode,
+        ProjectStructure project,
+        TypeStructure type,
+        IReadOnlyDictionary<string, TypeStructure[]> nestedTypesByParent)
+    {
+        var typeNode = new TreeNode(type.Name) { Tag = new TypeNodeContext(project, type) };
+        parentNode.Nodes.Add(typeNode);
+
+        AddFieldNodes(typeNode, type);
+        AddUiControlNodes(typeNode, type);
+        AddUiEventHandlerNodes(typeNode, type);
+        AddMethodNodes(typeNode, project, type);
+
+        if (!nestedTypesByParent.TryGetValue(type.SymbolId, out var nestedTypes))
+        {
+            return;
+        }
+
+        var nestedGroupNode = new TreeNode("Nested Types") { Tag = nestedTypes };
+        typeNode.Nodes.Add(nestedGroupNode);
+
+        foreach (var nestedType in nestedTypes.OrderBy(nestedType => nestedType.FullName, StringComparer.Ordinal))
+        {
+            AddTypeNode(nestedGroupNode, project, nestedType, nestedTypesByParent);
+        }
     }
 
     private static void AddFieldNodes(TreeNode typeNode, TypeStructure type)
