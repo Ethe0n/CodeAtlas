@@ -143,8 +143,8 @@ public sealed class ControlFlowGraphView : UserControl
     graph.Attr.LayerDirection = LayerDirection.TB;
     graph.Attr.NodeSeparation = 48;
     graph.Attr.LayerSeparation = 70;
-    graph.Attr.MinNodeHeight = 48;
-    graph.Attr.MinNodeWidth = 170;
+    graph.Attr.MinNodeHeight = 30;
+    graph.Attr.MinNodeWidth = 50;
     graph.Attr.AspectRatio = 0.8;
 
     graph.LayoutAlgorithmSettings = new SugiyamaLayoutSettings
