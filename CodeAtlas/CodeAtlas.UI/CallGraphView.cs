@@ -9,6 +9,7 @@ namespace CodeAtlas.UI;
 public sealed class CallGraphView : UserControl
 {
   private readonly GViewer _viewer = new();
+  private readonly Dictionary<string, string> _nodeMethodSymbols = new(StringComparer.Ordinal);
   private readonly System.Windows.Forms.Label _emptyLabel = new()
   {
     Dock = DockStyle.Fill,
@@ -16,12 +17,15 @@ public sealed class CallGraphView : UserControl
     TextAlign = ContentAlignment.MiddleCenter
   };
 
+  public event Action<string>? MethodSelected;
+
   public CallGraphView()
   {
     Dock = DockStyle.Fill;
 
     _viewer.Dock = DockStyle.Fill;
     _viewer.ToolBarIsVisible = true;
+    _viewer.MouseDoubleClick += Viewer_MouseDoubleClick;
 
     Controls.Add(_viewer);
     Controls.Add(_emptyLabel);
@@ -34,6 +38,8 @@ public sealed class CallGraphView : UserControl
     IReadOnlyList<CallRelation> incomingCalls,
     IReadOnlyList<CallRelation> outgoingCalls)
   {
+    _nodeMethodSymbols.Clear();
+
     var graph = new Graph(method.Name)
     {
       Directed = true
@@ -42,6 +48,7 @@ public sealed class CallGraphView : UserControl
 
     var currentNodeId = GetMethodNodeId(method.SymbolId);
     var currentNode = graph.AddNode(currentNodeId);
+    _nodeMethodSymbols[currentNodeId] = method.SymbolId;
     ConfigureCurrentMethodNode(currentNode, method);
 
     foreach (var group in incomingCalls.GroupBy(GetCallerNodeId))
@@ -53,6 +60,7 @@ public sealed class CallGraphView : UserControl
       var callerNode =
           graph.FindNode(callerNodeId) ??
           graph.AddNode(callerNodeId);
+      _nodeMethodSymbols[callerNodeId] = call.CallerMethodSymbolId;
 
       ConfigureCallerNode(callerNode, call);
 
@@ -77,6 +85,10 @@ public sealed class CallGraphView : UserControl
       var calleeNode =
           graph.FindNode(calleeNodeId) ??
           graph.AddNode(calleeNodeId);
+      if (call.IsProjectInternal)
+      {
+        _nodeMethodSymbols[calleeNodeId] = call.CalleeMethodSymbolId;
+      }
 
       ConfigureCalleeNode(calleeNode, call);
 
@@ -100,9 +112,23 @@ public sealed class CallGraphView : UserControl
 
   public void ClearGraph()
   {
+    _nodeMethodSymbols.Clear();
     _viewer.Graph = null;
     _viewer.Visible = false;
     _emptyLabel.Visible = true;
+  }
+
+  private void Viewer_MouseDoubleClick(object? sender, MouseEventArgs args)
+  {
+    if (_viewer.ObjectUnderMouseCursor?.DrawingObject is not Node node)
+    {
+      return;
+    }
+
+    if (_nodeMethodSymbols.TryGetValue(node.Id, out var methodSymbolId))
+    {
+      MethodSelected?.Invoke(methodSymbolId);
+    }
   }
 
   private static void ConfigureGraphLayout(Graph graph)

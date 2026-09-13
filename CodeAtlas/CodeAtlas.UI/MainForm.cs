@@ -22,6 +22,7 @@ public sealed class MainForm : Form
         MinimumSize = new Size(900, 600);
 
         BuildLayout();
+        _callGraphView.MethodSelected += SelectMethodNodeBySymbolId;
     }
 
     private void BuildLayout()
@@ -256,6 +257,38 @@ public sealed class MainForm : Form
     {
         var controlFlow = context.Project.ControlFlows.FirstOrDefault(flow => flow.MethodId == context.Method.SymbolId);
         _controlFlowGraphView.ShowGraph(controlFlow);
+    }
+
+    private void SelectMethodNodeBySymbolId(string methodSymbolId)
+    {
+        var node = FindMethodNode(_projectExplorer.Nodes, methodSymbolId);
+        if (node is null)
+        {
+            return;
+        }
+
+        node.EnsureVisible();
+        _projectExplorer.SelectedNode = node;
+    }
+
+    private static TreeNode? FindMethodNode(TreeNodeCollection nodes, string methodSymbolId)
+    {
+        foreach (TreeNode node in nodes)
+        {
+            if (node.Tag is MethodNodeContext context &&
+                string.Equals(context.Method.SymbolId, methodSymbolId, StringComparison.Ordinal))
+            {
+                return node;
+            }
+
+            var match = FindMethodNode(node.Nodes, methodSymbolId);
+            if (match is not null)
+            {
+                return match;
+            }
+        }
+
+        return null;
     }
 
     private void ClearDetails()
