@@ -131,6 +131,9 @@ public sealed class VbSyntaxStructureExtractor
             typeSymbol.ContainingNamespace?.IsGlobalNamespace == false
                 ? typeSymbol.ContainingNamespace.ToDisplayString()
                 : null,
+            typeSymbol.TypeKind.ToString(),
+            ToAccessibility(typeSymbol.DeclaredAccessibility),
+            typeSymbol.BaseType is null ? null : ToBaseTypeDisplayName(typeSymbol.BaseType),
             filePath is null ? Array.Empty<string>() : new[] { ToProjectRelativePath(filePath, projectDirectory) },
             ToSpanInfo(classBlock.GetLocation().GetLineSpan()),
             fields,
@@ -469,6 +472,13 @@ public sealed class VbSyntaxStructureExtractor
             Accessibility.ProtectedAndInternal => "Private Protected",
             _ => "Unspecified"
         };
+    }
+
+    private static string ToBaseTypeDisplayName(INamedTypeSymbol baseType)
+    {
+        return baseType.SpecialType == SpecialType.System_Object
+            ? "System.Object"
+            : baseType.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
     }
 
     private static string GetAccessibility(SyntaxTokenList modifiers)

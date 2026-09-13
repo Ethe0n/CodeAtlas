@@ -206,10 +206,10 @@ public sealed class MainForm : Form
             string.Empty,
             "Type",
             $"Name            {type.FullName}",
-            "Kind            (not available)",
-            "Accessibility   (not available)",
+            $"Kind            {FormatOptional(type.Kind)}",
+            $"Accessibility   {FormatOptional(type.Accessibility)}",
             $"Partial         {FormatBoolean(type.FilePaths.Count > 1)}",
-            "Base Type       (not available)",
+            $"Base Type       {FormatOptional(type.BaseType)}",
             string.Empty,
             "Source"
         };
@@ -433,6 +433,11 @@ public sealed class MainForm : Form
     private static string FormatBoolean(bool value)
     {
         return value ? "Yes" : "No";
+    }
+
+    private static string FormatOptional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "(not available)" : value;
     }
 
     private sealed record TypeNodeContext(ProjectStructure Project, TypeStructure Type);
