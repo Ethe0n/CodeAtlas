@@ -174,14 +174,93 @@ public sealed class MainForm : Form
     {
         ClearDetails();
 
-        if (node?.Tag is not MethodNodeContext context)
+        switch (node?.Tag)
         {
-            return;
+            case TypeNodeContext typeContext:
+                ShowClassOverview(typeContext);
+                break;
+            case MethodNodeContext methodContext:
+                ShowMethodOverview(methodContext);
+                ShowMethodCalls(methodContext);
+                ShowControlFlow(methodContext);
+                break;
+        }
+    }
+
+    private void ShowClassOverview(TypeNodeContext context)
+    {
+        var type = context.Type;
+        var methods = type.Methods
+            .Where(method => !method.IsGenerated)
+            .ToArray();
+        var fields = type.Fields
+            .Where(field => !field.IsGenerated)
+            .ToArray();
+        var properties = type.Properties
+            .Where(property => !property.IsGenerated)
+            .ToArray();
+        var lines = new List<string>
+        {
+            type.Name,
+            new string('-', Math.Max(24, type.Name.Length)),
+            string.Empty,
+            "Type",
+            $"Name            {type.FullName}",
+            "Kind            (not available)",
+            "Accessibility   (not available)",
+            $"Partial         {FormatBoolean(type.FilePaths.Count > 1)}",
+            "Base Type       (not available)",
+            string.Empty,
+            "Source"
+        };
+
+        if (type.FilePaths.Count == 0)
+        {
+            lines.Add("(unknown)");
+        }
+        else
+        {
+            lines.AddRange(type.FilePaths.Select(path => Path.GetFileName(path)));
         }
 
-        ShowMethodOverview(context);
-        ShowMethodCalls(context);
-        ShowControlFlow(context);
+        lines.AddRange(
+        [
+            string.Empty,
+            "Structure",
+            $"Fields            {fields.Length}",
+            $"Properties        {properties.Length}",
+            $"Methods           {methods.Length}",
+            $"UI Controls       {type.UiControls.Count}",
+            $"UI Event Handlers {type.UiEventHandlers.Count}",
+            string.Empty,
+            "Methods"
+        ]);
+
+        AppendIndentedList(lines, methods.Select(FormatMethodSignature));
+
+        lines.AddRange(
+        [
+            string.Empty,
+            "Fields"
+        ]);
+        AppendIndentedList(lines, fields.Select(field => $"{field.Name} : {field.Type}"));
+
+        lines.AddRange(
+        [
+            string.Empty,
+            "UI Controls"
+        ]);
+        AppendIndentedList(lines, type.UiControls.Select(control => $"{control.Name} : {ShortTypeName(control.Type)}"));
+
+        lines.AddRange(
+        [
+            string.Empty,
+            "UI Event Handlers"
+        ]);
+        AppendIndentedList(lines, type.UiEventHandlers.Select(handler =>
+            $"{handler.ControlName}.{handler.EventName} -> {handler.HandlerMethodName}"));
+
+        _overviewText.Text = string.Join(Environment.NewLine, lines);
     }
 
     private void ShowMethodOverview(MethodNodeContext context)
@@ -326,6 +405,29 @@ public sealed class MainForm : Form
         return index >= 0 && index < typeName.Length - 1
             ? typeName[(index + 1)..]
             : typeName;
+    }
+
+    private static string FormatMethodSignature(MethodStructure method)
+    {
+        var signatureStart = method.SymbolId.IndexOf('(', StringComparison.Ordinal);
+        return signatureStart >= 0
+            ? $"{method.Name}{method.SymbolId[signatureStart..]}"
+            : $"{method.Name}()";
+    }
+
+    private static void AppendIndentedList(List<string> lines, IEnumerable<string> values)
+    {
+        var added = false;
+        foreach (var value in values)
+        {
+            lines.Add($"  {value}");
+            added = true;
+        }
+
+        if (!added)
+        {
+            lines.Add("  (none)");
+        }
     }
 
     private static string FormatBoolean(bool value)
