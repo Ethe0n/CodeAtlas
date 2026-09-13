@@ -186,13 +186,55 @@ public sealed class MainForm : Form
     private void ShowMethodOverview(MethodNodeContext context)
     {
         var method = context.Method;
-        _overviewText.Text = string.Join(
-            Environment.NewLine,
+        var outgoingCalls = context.Project.Calls
+            .Where(call => call.CallerMethodSymbolId == method.SymbolId)
+            .ToArray();
+        var incomingCalls = context.Project.Calls
+            .Where(call =>
+                call.IsProjectInternal &&
+                call.CalleeMethodSymbolId == method.SymbolId &&
+                call.CallerMethodSymbolId != method.SymbolId)
+            .ToArray();
+        var externalCalls = outgoingCalls
+            .Where(call => !call.IsProjectInternal)
+            .ToArray();
+        var controlFlow = context.Project.ControlFlows
+            .FirstOrDefault(flow => flow.MethodId == method.SymbolId);
+        var cfgBlocks = controlFlow?.Nodes
+            .Count(node => node.Kind is not "Entry" and not "Exit") ?? 0;
+        var conditions = controlFlow?.Edges
+            .Where(edge => edge.Kind is "ConditionalTrue" or "ConditionalFalse")
+            .Select(edge => edge.From)
+            .Distinct()
+            .Count() ?? 0;
+        var isEventHandler = context.Type.UiEventHandlers.Any(handler =>
+            string.Equals(handler.HandlerMethodSymbolId, method.SymbolId, StringComparison.Ordinal) ||
+            string.Equals(handler.HandlerMethodName, method.Name, StringComparison.Ordinal));
+
+        var lines = new[]
+        {
+            "Method",
             $"Method Name: {method.Name}",
             $"Full Name / Id: {method.SymbolId}",
             $"Accessibility: {method.Accessibility}",
             $"Declaring File: {method.FilePath ?? "(unknown)"}",
-            $"Source Line: {method.Span.StartLine}");
+            $"Source Line: {method.Span.StartLine}",
+            string.Empty,
+            "Calls",
+            $"Incoming Calls: {incomingCalls.Length}",
+            $"Outgoing Calls: {outgoingCalls.Length}",
+            $"External Calls: {externalCalls.Length}",
+            string.Empty,
+            "Control Flow",
+            $"CFG Blocks: {cfgBlocks}",
+            $"Conditions: {conditions}",
+            string.Empty,
+            "Flags",
+            $"Generated: {FormatBoolean(method.IsGenerated)}",
+            $"Event Handler: {FormatBoolean(isEventHandler)}"
+        };
+
+        _overviewText.Text = string.Join(Environment.NewLine, lines);
     }
 
     private void ShowMethodCalls(MethodNodeContext context)
@@ -277,6 +319,11 @@ public sealed class MainForm : Form
         return index >= 0 && index < typeName.Length - 1
             ? typeName[(index + 1)..]
             : typeName;
+    }
+
+    private static string FormatBoolean(bool value)
+    {
+        return value ? "Yes" : "No";
     }
 
     private sealed record TypeNodeContext(ProjectStructure Project, TypeStructure Type);
