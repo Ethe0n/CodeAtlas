@@ -1,4 +1,9 @@
 Public NotInheritable Class GlobalContext
+  Public Class UserScoreSummary
+    Public Property UserName As String = String.Empty
+    Public Property TotalScore As Integer
+  End Class
+
   Private Shared ReadOnly _instance As New GlobalContext()
 
   Private _requestCount As Integer
