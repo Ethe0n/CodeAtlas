@@ -8,7 +8,7 @@ public sealed class MainForm : Form
     private readonly TreeView _projectExplorer = new();
     private readonly TabControl _detailsTabs = new();
     private readonly TextBox _overviewText = CreateReadOnlyTextBox();
-    private readonly TextBox _callGraphText = CreateReadOnlyTextBox();
+    private readonly CallGraphView _callGraphView = new();
     private readonly ControlFlowGraphView _controlFlowGraphView = new();
     private readonly ToolStripStatusLabel _statusLabel = new("Ready");
 
@@ -47,7 +47,7 @@ public sealed class MainForm : Form
 
         _detailsTabs.Dock = DockStyle.Fill;
         _detailsTabs.TabPages.Add(CreateTabPage("Overview", _overviewText));
-        _detailsTabs.TabPages.Add(CreateTabPage("Call Graph", _callGraphText));
+        _detailsTabs.TabPages.Add(CreateTabPage("Call Graph", _callGraphView));
         _detailsTabs.TabPages.Add(CreateTabPage("Control Flow", _controlFlowGraphView));
         splitContainer.Panel2.Controls.Add(_detailsTabs);
 
@@ -243,25 +243,7 @@ public sealed class MainForm : Form
             .Where(call => call.CallerMethodSymbolId == context.Method.SymbolId)
             .ToArray();
 
-        if (calls.Length == 0)
-        {
-            _callGraphText.Text = "(no outgoing calls)";
-            return;
-        }
-
-        var internalCalls = calls.Where(call => call.IsProjectInternal).ToArray();
-        var externalCalls = calls.Where(call => !call.IsProjectInternal).ToArray();
-        var lines = new List<string>();
-
-        AppendCallGroup(lines, "Internal", internalCalls);
-        if (lines.Count > 0 && externalCalls.Length > 0)
-        {
-            lines.Add(string.Empty);
-        }
-
-        AppendCallGroup(lines, "External", externalCalls);
-
-        _callGraphText.Text = string.Join(Environment.NewLine, lines);
+        _callGraphView.ShowGraph(context.Method, calls);
     }
 
     private void ShowControlFlow(MethodNodeContext context)
@@ -270,24 +252,10 @@ public sealed class MainForm : Form
         _controlFlowGraphView.ShowGraph(controlFlow);
     }
 
-    private static void AppendCallGroup(List<string> lines, string title, IReadOnlyList<CallRelation> calls)
-    {
-        if (calls.Count == 0)
-        {
-            return;
-        }
-
-        lines.Add(title);
-        foreach (var call in calls)
-        {
-            lines.Add($"  -> {call.CalleeDisplayName}");
-        }
-    }
-
     private void ClearDetails()
     {
         _overviewText.Clear();
-        _callGraphText.Clear();
+        _callGraphView.ClearGraph();
         _controlFlowGraphView.ClearGraph();
     }
 
