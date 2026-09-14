@@ -273,6 +273,9 @@ public sealed class MainForm : Form
 
     switch (node?.Tag)
     {
+      case ProjectStructure project:
+        ShowProjectOverview(project);
+        break;
       case TypeNodeContext typeContext:
         ShowClassOverview(typeContext);
         ShowClassDependency(typeContext);
@@ -364,6 +367,81 @@ public sealed class MainForm : Form
     _overviewText.Text = string.Join(Environment.NewLine, lines);
   }
 
+  private void ShowProjectOverview(ProjectStructure project)
+  {
+    var types = project.Types;
+    var topLevelTypes = types.Count(type => type.ContainingTypeSymbolId is null);
+    var nestedTypes = types.Count - topLevelTypes;
+    var methods = types.SelectMany(type => type.Methods).Where(method => !method.IsGenerated).ToArray();
+    var generatedMethods = types
+        .SelectMany(type => type.GeneratedMethods)
+        .Concat(types.SelectMany(type => type.Methods).Where(method => method.IsGenerated))
+        .GroupBy(method => method.SymbolId, StringComparer.Ordinal)
+        .Count();
+    var fields = types.SelectMany(type => type.Fields).Where(field => !field.IsGenerated).ToArray();
+    var properties = types.SelectMany(type => type.Properties).Where(property => !property.IsGenerated).ToArray();
+    var uiControls = types.Sum(type => type.UiControls.Count);
+    var uiEventHandlers = types.Sum(type => type.UiEventHandlers.Count);
+    var internalCalls = project.Calls.Count(call => call.IsProjectInternal);
+    var externalCalls = project.Calls.Count(call => !call.IsProjectInternal);
+    var fieldReads = project.FieldUsages.Count(usage => usage.UsageKind is FieldUsageKind.Read or FieldUsageKind.ReadWrite);
+    var fieldWrites = project.FieldUsages.Count(usage => usage.UsageKind is FieldUsageKind.Write or FieldUsageKind.ReadWrite);
+    var dependencyRelations = project.TypeDependencies.Count;
+    var dependencyPairs = project.TypeDependencies
+        .Select(dependency => $"{dependency.SourceTypeSymbolId}|{dependency.TargetTypeSymbolId}")
+        .Distinct(StringComparer.Ordinal)
+        .Count();
+
+    var lines = new List<string>
+        {
+            "Project",
+            $"Name                   {project.Name}",
+            string.Empty,
+            "Structure",
+            $"Types                  {types.Count}",
+            $"Top-Level Types        {topLevelTypes}",
+            $"Nested Types           {nestedTypes}",
+            $"Methods                {methods.Length}",
+            $"Fields                 {fields.Length}",
+            $"Properties             {properties.Length}",
+            $"UI Controls            {uiControls}",
+            $"UI Event Handlers      {uiEventHandlers}",
+            string.Empty,
+            "Analysis",
+            $"Internal Call Sites    {internalCalls}",
+            $"External Call Sites    {externalCalls}",
+            $"Field Reads            {fieldReads}",
+            $"Field Writes           {fieldWrites}",
+            $"Dependency Relations   {dependencyRelations}",
+            $"Dependency Pairs       {dependencyPairs}",
+            string.Empty,
+            "Generated",
+            "Generated Types         (not available)",
+            $"Generated Methods       {generatedMethods}",
+            string.Empty,
+            "Types"
+        };
+
+    foreach (var type in types.OrderBy(type => type.FullName, StringComparer.Ordinal))
+    {
+      var typeMethods = type.Methods.Count(method => !method.IsGenerated);
+      var typeFields = type.Fields.Count(field => !field.IsGenerated);
+      var typeProperties = type.Properties.Count(property => !property.IsGenerated);
+
+      lines.Add(type.FullName);
+      lines.Add($"  Methods      {typeMethods}");
+      lines.Add($"  Fields       {typeFields}");
+      lines.Add($"  Properties   {typeProperties}");
+      if (type.UiControls.Count > 0)
+      {
+        lines.Add($"  UI Controls  {type.UiControls.Count}");
+      }
+
+      lines.Add(string.Empty);
+    }
+
+    _overviewText.Text = string.Join(Environment.NewLine, lines);
+  }
   private void ShowFieldOverview(FieldNodeContext context)
   {
     var field = context.Field;
@@ -680,3 +758,5 @@ public sealed class MainForm : Form
 
   private sealed record MethodNodeContext(ProjectStructure Project, TypeStructure Type, MethodStructure Method);
 }
+
+
