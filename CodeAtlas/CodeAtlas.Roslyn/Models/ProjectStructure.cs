@@ -7,4 +7,5 @@ public sealed record ProjectStructure(
     string Language,
     IReadOnlyList<TypeStructure> Types,
     IReadOnlyList<CallRelation> Calls,
+    IReadOnlyList<FieldUsageRelation> FieldUsages,
     IReadOnlyList<ControlFlowInfo> ControlFlows);

@@ -1,5 +1,6 @@
 using CodeAtlas.Roslyn.Models;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.Operations;
 using Microsoft.CodeAnalysis.Text;
 using Microsoft.CodeAnalysis.VisualBasic;
 using Microsoft.CodeAnalysis.VisualBasic.Syntax;
@@ -67,6 +68,21 @@ public sealed class VbSyntaxStructureExtractor
             })
             .Where(controlFlow => controlFlow is not null)
             .Select(controlFlow => controlFlow!)
+            .ToArray();
+    }
+
+    public IReadOnlyList<FieldUsageRelation> ExtractFieldUsages(
+        SyntaxNode root,
+        SemanticModel semanticModel,
+        string? filePath,
+        string? projectDirectory)
+    {
+        var isDesignerDocument = IsDesignerDocument(filePath);
+
+        return root
+            .DescendantNodes()
+            .OfType<MethodBlockSyntax>()
+            .SelectMany(methodBlock => ExtractMethodFieldUsages(methodBlock, semanticModel, filePath, projectDirectory, isDesignerDocument))
             .ToArray();
     }
 
@@ -162,13 +178,18 @@ public sealed class VbSyntaxStructureExtractor
             var syntax = classBlock.SyntaxTree.GetRoot().FindNode(location.SourceSpan);
             var relativePath = ToProjectRelativePath(location.GetLineSpan().Path, projectDirectory);
             yield return new FieldStructure(
+                GetSymbolId(fieldSymbol),
                 fieldSymbol.Name,
                 fieldSymbol.Type.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat),
                 ToAccessibility(fieldSymbol.DeclaredAccessibility),
                 fieldSymbol.IsStatic,
+                fieldSymbol.IsReadOnly,
+                fieldSymbol.IsConst,
+                GetSymbolId(fieldSymbol.ContainingType),
                 relativePath,
                 IsGenerated(syntax, fieldSymbol),
-                ToSpanInfo(location.GetLineSpan()));
+                ToSpanInfo(location.GetLineSpan()),
+                GetFieldInitializer(syntax));
         }
         else if (member is IEventSymbol { IsImplicitlyDeclared: false } eventSymbol)
         {
@@ -181,13 +202,18 @@ public sealed class VbSyntaxStructureExtractor
             var syntax = classBlock.SyntaxTree.GetRoot().FindNode(location.SourceSpan);
             var relativePath = ToProjectRelativePath(location.GetLineSpan().Path, projectDirectory);
             yield return new FieldStructure(
+                GetSymbolId(eventSymbol),
                 eventSymbol.Name,
                 eventSymbol.Type.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat),
                 ToAccessibility(eventSymbol.DeclaredAccessibility),
                 eventSymbol.IsStatic,
+                false,
+                false,
+                GetSymbolId(eventSymbol.ContainingType),
                 relativePath,
                 IsGenerated(syntax, eventSymbol),
-                ToSpanInfo(location.GetLineSpan()));
+                ToSpanInfo(location.GetLineSpan()),
+                null);
         }
     }
 
@@ -294,6 +320,65 @@ public sealed class VbSyntaxStructureExtractor
         }
     }
 
+    private static IEnumerable<FieldUsageRelation> ExtractMethodFieldUsages(
+        MethodBlockSyntax methodBlock,
+        SemanticModel semanticModel,
+        string? filePath,
+        string? projectDirectory,
+        bool isDesignerDocument)
+    {
+        var statement = methodBlock.SubOrFunctionStatement;
+        if (semanticModel.GetDeclaredSymbol(statement) is not IMethodSymbol methodSymbol)
+        {
+            yield break;
+        }
+
+        var methodSyntax = methodBlock.SyntaxTree.GetRoot().FindNode(methodBlock.GetLocation().SourceSpan);
+        if (isDesignerDocument || IsGenerated(methodSyntax, methodSymbol))
+        {
+            yield break;
+        }
+
+        if (semanticModel.GetOperation(methodBlock) is not IBlockOperation operation)
+        {
+            yield break;
+        }
+
+        var seenReferences = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var fieldReference in DescendantsAndSelf(operation).OfType<IFieldReferenceOperation>())
+        {
+            if (fieldReference.Field.IsImplicitlyDeclared)
+            {
+                continue;
+            }
+
+            var fieldSymbolId = GetSymbolId(fieldReference.Field);
+            var usageKind = GetFieldUsageKind(fieldReference);
+            var span = ToSpanInfo(fieldReference.Syntax.GetLocation().GetLineSpan());
+            var key = string.Join(
+                "|",
+                fieldSymbolId,
+                GetSymbolId(methodSymbol),
+                usageKind,
+                span.StartLine,
+                span.StartColumn,
+                span.EndLine,
+                span.EndColumn);
+
+            if (!seenReferences.Add(key))
+            {
+                continue;
+            }
+
+            yield return new FieldUsageRelation(
+                fieldSymbolId,
+                GetSymbolId(methodSymbol),
+                usageKind,
+                filePath is null ? null : ToProjectRelativePath(filePath, projectDirectory),
+                span);
+        }
+    }
+
     private static IEnumerable<UiControlInfo> ExtractUiControls(
         ClassBlockSyntax classBlock,
         SemanticModel semanticModel,
@@ -322,6 +407,55 @@ public sealed class VbSyntaxStructureExtractor
                         type.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat),
                         filePath is null ? null : ToProjectRelativePath(filePath, projectDirectory));
                 }
+            }
+        }
+    }
+
+    private static string? GetFieldInitializer(SyntaxNode syntax)
+    {
+        return syntax.FirstAncestorOrSelf<VariableDeclaratorSyntax>()
+            ?.Initializer
+            ?.Value
+            .ToString();
+    }
+
+    private static FieldUsageKind GetFieldUsageKind(IFieldReferenceOperation fieldReference)
+    {
+        for (var current = fieldReference.Parent; current is not null; current = current.Parent)
+        {
+            switch (current)
+            {
+                case ISimpleAssignmentOperation assignment
+                    when ContainsOperation(assignment.Target, fieldReference):
+                    return FieldUsageKind.Write;
+
+                case ICompoundAssignmentOperation assignment
+                    when ContainsOperation(assignment.Target, fieldReference):
+                    return FieldUsageKind.ReadWrite;
+
+                case IIncrementOrDecrementOperation increment
+                    when ContainsOperation(increment.Target, fieldReference):
+                    return FieldUsageKind.ReadWrite;
+            }
+        }
+
+        return FieldUsageKind.Read;
+    }
+
+    private static bool ContainsOperation(IOperation root, IOperation target)
+    {
+        return DescendantsAndSelf(root).Any(operation => ReferenceEquals(operation, target));
+    }
+
+    private static IEnumerable<IOperation> DescendantsAndSelf(IOperation operation)
+    {
+        yield return operation;
+
+        foreach (var child in operation.ChildOperations)
+        {
+            foreach (var descendant in DescendantsAndSelf(child))
+            {
+                yield return descendant;
             }
         }
     }

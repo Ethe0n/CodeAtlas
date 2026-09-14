@@ -188,7 +188,7 @@ public sealed class MainForm : Form
     var typeNode = new TreeNode(type.Name) { Tag = new TypeNodeContext(project, type) };
     parentNode.Nodes.Add(typeNode);
 
-    AddFieldNodes(typeNode, type);
+    AddFieldNodes(typeNode, project, type);
     AddPropertyNodes(typeNode, type);
     AddUiControlNodes(typeNode, type);
     AddUiEventHandlerNodes(typeNode, type);
@@ -208,14 +208,14 @@ public sealed class MainForm : Form
     }
   }
 
-  private static void AddFieldNodes(TreeNode typeNode, TypeStructure type)
+  private static void AddFieldNodes(TreeNode typeNode, ProjectStructure project, TypeStructure type)
   {
     var groupNode = new TreeNode($"Fields ({type.Fields.Count})") { Tag = type.Fields };
     typeNode.Nodes.Add(groupNode);
 
     foreach (var field in type.Fields)
     {
-      groupNode.Nodes.Add(new TreeNode($"{field.Name} : {field.Type}") { Tag = field });
+      groupNode.Nodes.Add(new TreeNode($"{field.Name} : {field.Type}") { Tag = new FieldNodeContext(project, type, field) });
     }
   }
 
@@ -272,6 +272,9 @@ public sealed class MainForm : Form
     {
       case TypeNodeContext typeContext:
         ShowClassOverview(typeContext);
+        break;
+      case FieldNodeContext fieldContext:
+        ShowFieldOverview(fieldContext);
         break;
       case MethodNodeContext methodContext:
         ShowMethodOverview(methodContext);
@@ -353,6 +356,74 @@ public sealed class MainForm : Form
     ]);
     AppendIndentedList(lines, type.UiEventHandlers.Select(handler =>
         $"{handler.ControlName}.{handler.EventName} -> {handler.HandlerMethodName}"));
+
+    _overviewText.Text = string.Join(Environment.NewLine, lines);
+  }
+
+  private void ShowFieldOverview(FieldNodeContext context)
+  {
+    var field = context.Field;
+    var usages = context.Project.FieldUsages
+        .Where(usage => string.Equals(usage.FieldSymbolId, field.SymbolId, StringComparison.Ordinal))
+        .ToArray();
+    var readUsages = usages
+        .Where(usage => usage.UsageKind is FieldUsageKind.Read or FieldUsageKind.ReadWrite)
+        .ToArray();
+    var writeUsages = usages
+        .Where(usage => usage.UsageKind is FieldUsageKind.Write or FieldUsageKind.ReadWrite)
+        .ToArray();
+    var methodsById = context.Project.Types
+        .SelectMany(type => type.Methods.Concat(type.GeneratedMethods))
+        .GroupBy(method => method.SymbolId, StringComparer.Ordinal)
+        .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+    var usedByMethods = usages
+        .Select(usage => usage.MethodSymbolId)
+        .Distinct(StringComparer.Ordinal)
+        .Count();
+    var readByMethods = readUsages
+        .Select(usage => usage.MethodSymbolId)
+        .Distinct(StringComparer.Ordinal)
+        .Select(methodId => FormatMethodReference(methodId, methodsById));
+    var writtenByMethods = writeUsages
+        .Select(usage => usage.MethodSymbolId)
+        .Distinct(StringComparer.Ordinal)
+        .Select(methodId => FormatMethodReference(methodId, methodsById));
+
+    var lines = new List<string>
+        {
+            "Field",
+            $"Name            {field.Name}",
+            $"Type            {field.Type}",
+            $"Accessibility   {field.Accessibility}",
+            $"Shared          {FormatBoolean(field.IsShared)}",
+            $"ReadOnly        {FormatBoolean(field.IsReadOnly)}",
+            $"Const           {FormatBoolean(field.IsConst)}",
+            string.Empty,
+            "Owner",
+            $"Declaring Type  {context.Type.FullName}",
+            string.Empty,
+            "Declaration",
+            $"File            {field.FilePath ?? "(unknown)"}",
+            $"Line            {field.Span.StartLine}",
+            $"Initializer     {FormatOptional(field.Initializer)}",
+            string.Empty,
+            "Usage",
+            $"Reads           {readUsages.Length}",
+            $"Writes          {writeUsages.Length}",
+            $"Used By Methods {usedByMethods}",
+            $"Status          {GetFieldUsageStatus(readUsages.Length, writeUsages.Length)}",
+            string.Empty,
+            "Read By"
+        };
+
+    AppendIndentedList(lines, readByMethods);
+
+    lines.AddRange(
+    [
+        string.Empty,
+        "Written By"
+    ]);
+    AppendIndentedList(lines, writtenByMethods);
 
     _overviewText.Text = string.Join(Environment.NewLine, lines);
   }
@@ -509,6 +580,30 @@ public sealed class MainForm : Form
         : $"{method.Name}()";
   }
 
+  private static string FormatMethodReference(
+      string methodSymbolId,
+      IReadOnlyDictionary<string, MethodStructure> methodsById)
+  {
+    return methodsById.TryGetValue(methodSymbolId, out var method)
+        ? FormatMethodSignature(method)
+        : methodSymbolId;
+  }
+
+  private static string GetFieldUsageStatus(int reads, int writes)
+  {
+    if (reads == 0 && writes == 0)
+    {
+      return "Unused Candidate";
+    }
+
+    if (reads == 0)
+    {
+      return "Write Only Candidate";
+    }
+
+    return "Used";
+  }
+
   private static void AppendIndentedList(List<string> lines, IEnumerable<string> values)
   {
     var added = false;
@@ -535,6 +630,8 @@ public sealed class MainForm : Form
   }
 
   private sealed record TypeNodeContext(ProjectStructure Project, TypeStructure Type);
+
+  private sealed record FieldNodeContext(ProjectStructure Project, TypeStructure Type, FieldStructure Field);
 
   private sealed record MethodNodeContext(ProjectStructure Project, TypeStructure Type, MethodStructure Method);
 }

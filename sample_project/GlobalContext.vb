@@ -6,6 +6,7 @@ Public NotInheritable Class GlobalContext
 
   Private Shared ReadOnly _instance As New GlobalContext()
 
+  Private _count As Integer = 0
   Private _requestCount As Integer
   Private _lastMessage As String = String.Empty
 
@@ -31,6 +32,12 @@ Public NotInheritable Class GlobalContext
       Return _lastMessage
     End Get
   End Property
+
+  Public Sub TestFieldUsage()
+    _count = 10
+    Debug.Print(_count)
+    _count += 1
+  End Sub
 
   Public Function BuildStatusMessage(userName As String, scores As Integer()) As String
     _requestCount += 1

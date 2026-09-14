@@ -65,11 +65,13 @@ public sealed class VbSolutionAnalyzer
                 project.Language,
                 Array.Empty<TypeStructure>(),
                 Array.Empty<CallRelation>(),
+                Array.Empty<FieldUsageRelation>(),
                 Array.Empty<ControlFlowInfo>());
         }
 
         var types = new List<TypeStructure>();
         var calls = new List<CallRelation>();
+        var fieldUsages = new List<FieldUsageRelation>();
         var controlFlows = new List<ControlFlowInfo>();
         var projectDirectory = project.FilePath is null
             ? null
@@ -91,6 +93,7 @@ public sealed class VbSolutionAnalyzer
 
             types.AddRange(_structureExtractor.ExtractTypes(root, semanticModel, document.FilePath, projectDirectory));
             calls.AddRange(_structureExtractor.ExtractCalls(root, semanticModel, compilation, document.FilePath, projectDirectory));
+            fieldUsages.AddRange(_structureExtractor.ExtractFieldUsages(root, semanticModel, document.FilePath, projectDirectory));
             controlFlows.AddRange(_structureExtractor.ExtractControlFlows(root, semanticModel, document.FilePath));
         }
 
@@ -106,6 +109,10 @@ public sealed class VbSolutionAnalyzer
                 !generatedMethodIds.Contains(call.CalleeMethodSymbolId))
             .ToArray();
 
+        var filteredFieldUsages = fieldUsages
+            .Where(usage => !generatedMethodIds.Contains(usage.MethodSymbolId))
+            .ToArray();
+
         return new ProjectStructure(
             project.Id.Id.ToString(),
             project.Name,
@@ -113,6 +120,7 @@ public sealed class VbSolutionAnalyzer
             project.Language,
             mergedTypes,
             filteredCalls,
+            filteredFieldUsages,
             controlFlows
                 .Where(flow => !generatedMethodIds.Contains(flow.MethodId))
                 .OrderBy(flow => flow.MethodName, StringComparer.Ordinal)
