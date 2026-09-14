@@ -8,4 +8,5 @@ public sealed record ProjectStructure(
     IReadOnlyList<TypeStructure> Types,
     IReadOnlyList<CallRelation> Calls,
     IReadOnlyList<FieldUsageRelation> FieldUsages,
+    IReadOnlyList<TypeDependencyRelation> TypeDependencies,
     IReadOnlyList<ControlFlowInfo> ControlFlows);

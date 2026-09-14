@@ -81,3 +81,20 @@ Public NotInheritable Class GlobalContext
     Return matches
   End Function
 End Class
+
+Public Class DependencySampleA
+  Private _b As DependencySampleB
+
+  Public Property CurrentB As DependencySampleB
+
+  Public Function CreateB(value As DependencySampleB) As DependencySampleB
+    Dim result = New DependencySampleB()
+    result.DoSomething()
+    Return result
+  End Function
+End Class
+
+Public Class DependencySampleB
+  Public Sub DoSomething()
+  End Sub
+End Class

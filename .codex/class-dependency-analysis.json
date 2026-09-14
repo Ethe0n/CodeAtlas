@@ -1,0 +1,2012 @@
+{
+  "FilePath": "C:\\workspace\\CodeAtlas\\sample_project\\sample_project.sln",
+  "Projects": [
+    {
+      "Id": "6d2cc47b-7295-4a68-93d3-ba2c3809f8c4",
+      "Name": "sample_project",
+      "FilePath": "C:\\workspace\\CodeAtlas\\sample_project\\sample_project.vbproj",
+      "Language": "Visual Basic",
+      "Types": [
+        {
+          "Name": "DependencySampleA",
+          "FullName": "sample_project.DependencySampleA",
+          "SymbolId": "T:sample_project.DependencySampleA",
+          "Namespace": "sample_project",
+          "ContainingTypeSymbolId": null,
+          "Kind": "Class",
+          "Accessibility": "Public",
+          "BaseType": "System.Object",
+          "FilePaths": [
+            "GlobalContext.vb"
+          ],
+          "Span": {
+            "StartLine": 85,
+            "StartColumn": 1,
+            "EndLine": 95,
+            "EndColumn": 10
+          },
+          "Fields": [
+            {
+              "SymbolId": "F:sample_project.DependencySampleA._b",
+              "Name": "_b",
+              "Type": "sample_project.DependencySampleB",
+              "Accessibility": "Private",
+              "IsShared": false,
+              "IsReadOnly": false,
+              "IsConst": false,
+              "DeclaringTypeSymbolId": "T:sample_project.DependencySampleA",
+              "FilePath": "GlobalContext.vb",
+              "IsGenerated": false,
+              "Span": {
+                "StartLine": 86,
+                "StartColumn": 11,
+                "EndLine": 86,
+                "EndColumn": 13
+              },
+              "Initializer": null
+            }
+          ],
+          "Properties": [
+            {
+              "Name": "CurrentB",
+              "Type": "sample_project.DependencySampleB",
+              "Accessibility": "Public",
+              "IsShared": false,
+              "IsReadOnly": false,
+              "IsWriteOnly": false,
+              "FilePath": "GlobalContext.vb",
+              "IsGenerated": false,
+              "Span": {
+                "StartLine": 88,
+                "StartColumn": 19,
+                "EndLine": 88,
+                "EndColumn": 27
+              }
+            }
+          ],
+          "Methods": [
+            {
+              "Name": "CreateB",
+              "SymbolId": "M:sample_project.DependencySampleA.CreateB(sample_project.DependencySampleB)",
+              "ContainingTypeSymbolId": "T:sample_project.DependencySampleA",
+              "Kind": "Function",
+              "Accessibility": "Public",
+              "FilePath": "GlobalContext.vb",
+              "IsGenerated": false,
+              "Span": {
+                "StartLine": 90,
+                "StartColumn": 19,
+                "EndLine": 90,
+                "EndColumn": 26
+              }
+            }
+          ],
+          "GeneratedMethods": [],
+          "UiControls": [],
+          "UiEventHandlers": []
+        },
+        {
+          "Name": "DependencySampleB",
+          "FullName": "sample_project.DependencySampleB",
+          "SymbolId": "T:sample_project.DependencySampleB",
+          "Namespace": "sample_project",
+          "ContainingTypeSymbolId": null,
+          "Kind": "Class",
+          "Accessibility": "Public",
+          "BaseType": "System.Object",
+          "FilePaths": [
+            "GlobalContext.vb"
+          ],
+          "Span": {
+            "StartLine": 97,
+            "StartColumn": 1,
+            "EndLine": 100,
+            "EndColumn": 10
+          },
+          "Fields": [],
+          "Properties": [],
+          "Methods": [
+            {
+              "Name": "DoSomething",
+              "SymbolId": "M:sample_project.DependencySampleB.DoSomething",
+              "ContainingTypeSymbolId": "T:sample_project.DependencySampleB",
+              "Kind": "Sub",
+              "Accessibility": "Public",
+              "FilePath": "GlobalContext.vb",
+              "IsGenerated": false,
+              "Span": {
+                "StartLine": 98,
+                "StartColumn": 14,
+                "EndLine": 98,
+                "EndColumn": 25
+              }
+            }
+          ],
+          "GeneratedMethods": [],
+          "UiControls": [],
+          "UiEventHandlers": []
+        },
+        {
+          "Name": "Form1",
+          "FullName": "sample_project.Form1",
+          "SymbolId": "T:sample_project.Form1",
+          "Namespace": "sample_project",
+          "ContainingTypeSymbolId": null,
+          "Kind": "Class",
+          "Accessibility": "Public",
+          "BaseType": "System.Windows.Forms.Form",
+          "FilePaths": [
+            "Form1.Designer.vb",
+            "Form1.vb"
+          ],
+          "Span": {
+            "StartLine": 1,
+            "StartColumn": 1,
+            "EndLine": 62,
+            "EndColumn": 10
+          },
+          "Fields": [
+            {
+              "SymbolId": "F:sample_project.Form1.number",
+              "Name": "number",
+              "Type": "Integer",
+              "Accessibility": "Private",
+              "IsShared": false,
+              "IsReadOnly": false,
+              "IsConst": false,
+              "DeclaringTypeSymbolId": "T:sample_project.Form1",
+              "FilePath": "Form1.vb",
+              "IsGenerated": false,
+              "Span": {
+                "StartLine": 2,
+                "StartColumn": 11,
+                "EndLine": 2,
+                "EndColumn": 17
+              },
+              "Initializer": null
+            }
+          ],
+          "Properties": [],
+          "Methods": [
+            {
+              "Name": "TestFunction",
+              "SymbolId": "M:sample_project.Form1.TestFunction",
+              "ContainingTypeSymbolId": "T:sample_project.Form1",
+              "Kind": "Sub",
+              "Accessibility": "Public",
+              "FilePath": "Form1.vb",
+              "IsGenerated": false,
+              "Span": {
+                "StartLine": 4,
+                "StartColumn": 14,
+                "EndLine": 4,
+                "EndColumn": 26
+              }
+            },
+            {
+              "Name": "Button1_Click",
+              "SymbolId": "M:sample_project.Form1.Button1_Click(System.Object,System.EventArgs)",
+              "ContainingTypeSymbolId": "T:sample_project.Form1",
+              "Kind": "Sub",
+              "Accessibility": "Private",
+              "FilePath": "Form1.vb",
+              "IsGenerated": false,
+              "Span": {
+                "StartLine": 9,
+                "StartColumn": 15,
+                "EndLine": 9,
+                "EndColumn": 28
+              }
+            },
+            {
+              "Name": "Button2_Click",
+              "SymbolId": "M:sample_project.Form1.Button2_Click(System.Object,System.EventArgs)",
+              "ContainingTypeSymbolId": "T:sample_project.Form1",
+              "Kind": "Sub",
+              "Accessibility": "Private",
+              "FilePath": "Form1.vb",
+              "IsGenerated": false,
+              "Span": {
+                "StartLine": 18,
+                "StartColumn": 15,
+                "EndLine": 18,
+                "EndColumn": 28
+              }
+            },
+            {
+              "Name": "TestFlow",
+              "SymbolId": "M:sample_project.Form1.TestFlow(System.Int32)",
+              "ContainingTypeSymbolId": "T:sample_project.Form1",
+              "Kind": "Function",
+              "Accessibility": "Public",
+              "FilePath": "Form1.vb",
+              "IsGenerated": false,
+              "Span": {
+                "StartLine": 29,
+                "StartColumn": 19,
+                "EndLine": 29,
+                "EndColumn": 27
+              }
+            }
+          ],
+          "GeneratedMethods": [
+            {
+              "Name": "Dispose",
+              "SymbolId": "M:sample_project.Form1.Dispose(System.Boolean)",
+              "ContainingTypeSymbolId": "T:sample_project.Form1",
+              "Kind": "Sub",
+              "Accessibility": "Protected",
+              "FilePath": "Form1.Designer.vb",
+              "IsGenerated": true,
+              "Span": {
+                "StartLine": 7,
+                "StartColumn": 29,
+                "EndLine": 7,
+                "EndColumn": 36
+              }
+            },
+            {
+              "Name": "InitializeComponent",
+              "SymbolId": "M:sample_project.Form1.InitializeComponent",
+              "ContainingTypeSymbolId": "T:sample_project.Form1",
+              "Kind": "Sub",
+              "Accessibility": "Private",
+              "FilePath": "Form1.Designer.vb",
+              "IsGenerated": true,
+              "Span": {
+                "StartLine": 24,
+                "StartColumn": 17,
+                "EndLine": 24,
+                "EndColumn": 36
+              }
+            }
+          ],
+          "UiControls": [
+            {
+              "Name": "Button1",
+              "Type": "System.Windows.Forms.Button",
+              "DeclaringFile": "Form1.Designer.vb"
+            },
+            {
+              "Name": "Button2",
+              "Type": "System.Windows.Forms.Button",
+              "DeclaringFile": "Form1.Designer.vb"
+            }
+          ],
+          "UiEventHandlers": [
+            {
+              "ControlName": "Button1",
+              "EventName": "Click",
+              "HandlerMethodName": "Button1_Click",
+              "HandlerMethodSymbolId": "M:sample_project.Form1.Button1_Click(System.Object,System.EventArgs)",
+              "DeclaringFile": "Form1.vb"
+            },
+            {
+              "ControlName": "Button2",
+              "EventName": "Click",
+              "HandlerMethodName": "Button2_Click",
+              "HandlerMethodSymbolId": "M:sample_project.Form1.Button2_Click(System.Object,System.EventArgs)",
+              "DeclaringFile": "Form1.vb"
+            }
+          ]
+        },
+        {
+          "Name": "GlobalContext",
+          "FullName": "sample_project.GlobalContext",
+          "SymbolId": "T:sample_project.GlobalContext",
+          "Namespace": "sample_project",
+          "ContainingTypeSymbolId": null,
+          "Kind": "Class",
+          "Accessibility": "Public",
+          "BaseType": "System.Object",
+          "FilePaths": [
+            "GlobalContext.vb"
+          ],
+          "Span": {
+            "StartLine": 1,
+            "StartColumn": 1,
+            "EndLine": 83,
+            "EndColumn": 10
+          },
+          "Fields": [
+            {
+              "SymbolId": "F:sample_project.GlobalContext._instance",
+              "Name": "_instance",
+              "Type": "sample_project.GlobalContext",
+              "Accessibility": "Private",
+              "IsShared": true,
+              "IsReadOnly": true,
+              "IsConst": false,
+              "DeclaringTypeSymbolId": "T:sample_project.GlobalContext",
+              "FilePath": "GlobalContext.vb",
+              "IsGenerated": false,
+              "Span": {
+                "StartLine": 7,
+                "StartColumn": 27,
+                "EndLine": 7,
+                "EndColumn": 36
+              },
+              "Initializer": null
+            },
+            {
+              "SymbolId": "F:sample_project.GlobalContext._count",
+              "Name": "_count",
+              "Type": "Integer",
+              "Accessibility": "Private",
+              "IsShared": false,
+              "IsReadOnly": false,
+              "IsConst": false,
+              "DeclaringTypeSymbolId": "T:sample_project.GlobalContext",
+              "FilePath": "GlobalContext.vb",
+              "IsGenerated": false,
+              "Span": {
+                "StartLine": 9,
+                "StartColumn": 11,
+                "EndLine": 9,
+                "EndColumn": 17
+              },
+              "Initializer": "0"
+            },
+            {
+              "SymbolId": "F:sample_project.GlobalContext._requestCount",
+              "Name": "_requestCount",
+              "Type": "Integer",
+              "Accessibility": "Private",
+              "IsShared": false,
+              "IsReadOnly": false,
+              "IsConst": false,
+              "DeclaringTypeSymbolId": "T:sample_project.GlobalContext",
+              "FilePath": "GlobalContext.vb",
+              "IsGenerated": false,
+              "Span": {
+                "StartLine": 10,
+                "StartColumn": 11,
+                "EndLine": 10,
+                "EndColumn": 24
+              },
+              "Initializer": null
+            },
+            {
+              "SymbolId": "F:sample_project.GlobalContext._lastMessage",
+              "Name": "_lastMessage",
+              "Type": "String",
+              "Accessibility": "Private",
+              "IsShared": false,
+              "IsReadOnly": false,
+              "IsConst": false,
+              "DeclaringTypeSymbolId": "T:sample_project.GlobalContext",
+              "FilePath": "GlobalContext.vb",
+              "IsGenerated": false,
+              "Span": {
+                "StartLine": 11,
+                "StartColumn": 11,
+                "EndLine": 11,
+                "EndColumn": 23
+              },
+              "Initializer": "String.Empty"
+            }
+          ],
+          "Properties": [
+            {
+              "Name": "Instance",
+              "Type": "sample_project.GlobalContext",
+              "Accessibility": "Public",
+              "IsShared": true,
+              "IsReadOnly": true,
+              "IsWriteOnly": false,
+              "FilePath": "GlobalContext.vb",
+              "IsGenerated": false,
+              "Span": {
+                "StartLine": 16,
+                "StartColumn": 35,
+                "EndLine": 16,
+                "EndColumn": 43
+              }
+            },
+            {
+              "Name": "IsDebugMode",
+              "Type": "Boolean",
+              "Accessibility": "Public",
+              "IsShared": false,
+              "IsReadOnly": false,
+              "IsWriteOnly": false,
+              "FilePath": "GlobalContext.vb",
+              "IsGenerated": false,
+              "Span": {
+                "StartLine": 22,
+                "StartColumn": 19,
+                "EndLine": 22,
+                "EndColumn": 30
+              }
+            },
+            {
+              "Name": "RequestCount",
+              "Type": "Integer",
+              "Accessibility": "Public",
+              "IsShared": false,
+              "IsReadOnly": true,
+              "IsWriteOnly": false,
+              "FilePath": "GlobalContext.vb",
+              "IsGenerated": false,
+              "Span": {
+                "StartLine": 24,
+                "StartColumn": 28,
+                "EndLine": 24,
+                "EndColumn": 40
+              }
+            },
+            {
+              "Name": "LastMessage",
+              "Type": "String",
+              "Accessibility": "Public",
+              "IsShared": false,
+              "IsReadOnly": true,
+              "IsWriteOnly": false,
+              "FilePath": "GlobalContext.vb",
+              "IsGenerated": false,
+              "Span": {
+                "StartLine": 30,
+                "StartColumn": 28,
+                "EndLine": 30,
+                "EndColumn": 39
+              }
+            }
+          ],
+          "Methods": [
+            {
+              "Name": "TestFieldUsage",
+              "SymbolId": "M:sample_project.GlobalContext.TestFieldUsage",
+              "ContainingTypeSymbolId": "T:sample_project.GlobalContext",
+              "Kind": "Sub",
+              "Accessibility": "Public",
+              "FilePath": "GlobalContext.vb",
+              "IsGenerated": false,
+              "Span": {
+                "StartLine": 36,
+                "StartColumn": 14,
+                "EndLine": 36,
+                "EndColumn": 28
+              }
+            },
+            {
+              "Name": "BuildStatusMessage",
+              "SymbolId": "M:sample_project.GlobalContext.BuildStatusMessage(System.String,System.Int32[])",
+              "ContainingTypeSymbolId": "T:sample_project.GlobalContext",
+              "Kind": "Function",
+              "Accessibility": "Public",
+              "FilePath": "GlobalContext.vb",
+              "IsGenerated": false,
+              "Span": {
+                "StartLine": 42,
+                "StartColumn": 19,
+                "EndLine": 42,
+                "EndColumn": 37
+              }
+            },
+            {
+              "Name": "CountMatchingCells",
+              "SymbolId": "M:sample_project.GlobalContext.CountMatchingCells(System.Int32[0:,0:],System.Int32)",
+              "ContainingTypeSymbolId": "T:sample_project.GlobalContext",
+              "Kind": "Function",
+              "Accessibility": "Public",
+              "FilePath": "GlobalContext.vb",
+              "IsGenerated": false,
+              "Span": {
+                "StartLine": 70,
+                "StartColumn": 19,
+                "EndLine": 70,
+                "EndColumn": 37
+              }
+            }
+          ],
+          "GeneratedMethods": [],
+          "UiControls": [],
+          "UiEventHandlers": []
+        },
+        {
+          "Name": "UserScoreSummary",
+          "FullName": "sample_project.GlobalContext.UserScoreSummary",
+          "SymbolId": "T:sample_project.GlobalContext.UserScoreSummary",
+          "Namespace": "sample_project",
+          "ContainingTypeSymbolId": "T:sample_project.GlobalContext",
+          "Kind": "Class",
+          "Accessibility": "Public",
+          "BaseType": "System.Object",
+          "FilePaths": [
+            "GlobalContext.vb"
+          ],
+          "Span": {
+            "StartLine": 2,
+            "StartColumn": 3,
+            "EndLine": 5,
+            "EndColumn": 12
+          },
+          "Fields": [],
+          "Properties": [
+            {
+              "Name": "UserName",
+              "Type": "String",
+              "Accessibility": "Public",
+              "IsShared": false,
+              "IsReadOnly": false,
+              "IsWriteOnly": false,
+              "FilePath": "GlobalContext.vb",
+              "IsGenerated": false,
+              "Span": {
+                "StartLine": 3,
+                "StartColumn": 21,
+                "EndLine": 3,
+                "EndColumn": 29
+              }
+            },
+            {
+              "Name": "TotalScore",
+              "Type": "Integer",
+              "Accessibility": "Public",
+              "IsShared": false,
+              "IsReadOnly": false,
+              "IsWriteOnly": false,
+              "FilePath": "GlobalContext.vb",
+              "IsGenerated": false,
+              "Span": {
+                "StartLine": 4,
+                "StartColumn": 21,
+                "EndLine": 4,
+                "EndColumn": 31
+              }
+            }
+          ],
+          "Methods": [],
+          "GeneratedMethods": [],
+          "UiControls": [],
+          "UiEventHandlers": []
+        },
+        {
+          "Name": "MyApplication",
+          "FullName": "sample_project.My.MyApplication",
+          "SymbolId": "T:sample_project.My.MyApplication",
+          "Namespace": "sample_project.My",
+          "ContainingTypeSymbolId": null,
+          "Kind": "Class",
+          "Accessibility": "Friend",
+          "BaseType": "Microsoft.VisualBasic.ApplicationServices.WindowsFormsApplicationBase",
+          "FilePaths": [
+            "ApplicationEvents.vb",
+            "My Project\\Application.Designer.vb"
+          ],
+          "Span": {
+            "StartLine": 26,
+            "StartColumn": 5,
+            "EndLine": 28,
+            "EndColumn": 14
+          },
+          "Fields": [],
+          "Properties": [],
+          "Methods": [],
+          "GeneratedMethods": [
+            {
+              "Name": "OnCreateMainForm",
+              "SymbolId": "M:sample_project.My.MyApplication.OnCreateMainForm",
+              "ContainingTypeSymbolId": "T:sample_project.My.MyApplication",
+              "Kind": "Sub",
+              "Accessibility": "Protected",
+              "FilePath": "My Project\\Application.Designer.vb",
+              "IsGenerated": true,
+              "Span": {
+                "StartLine": 30,
+                "StartColumn": 33,
+                "EndLine": 30,
+                "EndColumn": 49
+              }
+            }
+          ],
+          "UiControls": [],
+          "UiEventHandlers": []
+        }
+      ],
+      "Calls": [
+        {
+          "CallerMethodSymbolId": "M:sample_project.Form1.TestFunction",
+          "CallerDisplayName": "sample_project.Form1.TestFunction()",
+          "CalleeMethodSymbolId": "M:System.Diagnostics.Debug.Print(System.String)",
+          "CalleeDisplayName": "System.Diagnostics.Debug.Print(String)",
+          "IsProjectInternal": false,
+          "CalleeAssemblyName": "System.Runtime",
+          "FilePath": "Form1.vb",
+          "Span": {
+            "StartLine": 5,
+            "StartColumn": 5,
+            "EndLine": 5,
+            "EndColumn": 38
+          }
+        },
+        {
+          "CallerMethodSymbolId": "M:sample_project.Form1.TestFunction",
+          "CallerDisplayName": "sample_project.Form1.TestFunction()",
+          "CalleeMethodSymbolId": "M:System.Diagnostics.Debug.Print(System.String)",
+          "CalleeDisplayName": "System.Diagnostics.Debug.Print(String)",
+          "IsProjectInternal": false,
+          "CalleeAssemblyName": "System.Runtime",
+          "FilePath": "Form1.vb",
+          "Span": {
+            "StartLine": 6,
+            "StartColumn": 5,
+            "EndLine": 6,
+            "EndColumn": 96
+          }
+        },
+        {
+          "CallerMethodSymbolId": "M:sample_project.Form1.TestFunction",
+          "CallerDisplayName": "sample_project.Form1.TestFunction()",
+          "CalleeMethodSymbolId": "M:sample_project.GlobalContext.BuildStatusMessage(System.String,System.Int32[])",
+          "CalleeDisplayName": "sample_project.GlobalContext.BuildStatusMessage(String, Integer())",
+          "IsProjectInternal": true,
+          "CalleeAssemblyName": "sample_project",
+          "FilePath": "Form1.vb",
+          "Span": {
+            "StartLine": 6,
+            "StartColumn": 17,
+            "EndLine": 6,
+            "EndColumn": 95
+          }
+        },
+        {
+          "CallerMethodSymbolId": "M:sample_project.Form1.Button1_Click(System.Object,System.EventArgs)",
+          "CallerDisplayName": "sample_project.Form1.Button1_Click(Object, System.EventArgs)",
+          "CalleeMethodSymbolId": "M:System.Diagnostics.Debug.Print(System.String)",
+          "CalleeDisplayName": "System.Diagnostics.Debug.Print(String)",
+          "IsProjectInternal": false,
+          "CalleeAssemblyName": "System.Runtime",
+          "FilePath": "Form1.vb",
+          "Span": {
+            "StartLine": 11,
+            "StartColumn": 7,
+            "EndLine": 11,
+            "EndColumn": 33
+          }
+        },
+        {
+          "CallerMethodSymbolId": "M:sample_project.Form1.Button1_Click(System.Object,System.EventArgs)",
+          "CallerDisplayName": "sample_project.Form1.Button1_Click(Object, System.EventArgs)",
+          "CalleeMethodSymbolId": "M:sample_project.Form1.TestFunction",
+          "CalleeDisplayName": "sample_project.Form1.TestFunction()",
+          "IsProjectInternal": true,
+          "CalleeAssemblyName": "sample_project",
+          "FilePath": "Form1.vb",
+          "Span": {
+            "StartLine": 14,
+            "StartColumn": 5,
+            "EndLine": 14,
+            "EndColumn": 19
+          }
+        },
+        {
+          "CallerMethodSymbolId": "M:sample_project.Form1.Button2_Click(System.Object,System.EventArgs)",
+          "CallerDisplayName": "sample_project.Form1.Button2_Click(Object, System.EventArgs)",
+          "CalleeMethodSymbolId": "M:System.Windows.Forms.MessageBox.Show(System.String)",
+          "CalleeDisplayName": "System.Windows.Forms.MessageBox.Show(String)",
+          "IsProjectInternal": false,
+          "CalleeAssemblyName": "System.Windows.Forms",
+          "FilePath": "Form1.vb",
+          "Span": {
+            "StartLine": 19,
+            "StartColumn": 5,
+            "EndLine": 19,
+            "EndColumn": 35
+          }
+        },
+        {
+          "CallerMethodSymbolId": "M:sample_project.Form1.Button2_Click(System.Object,System.EventArgs)",
+          "CallerDisplayName": "sample_project.Form1.Button2_Click(Object, System.EventArgs)",
+          "CalleeMethodSymbolId": "M:sample_project.Form1.TestFunction",
+          "CalleeDisplayName": "sample_project.Form1.TestFunction()",
+          "IsProjectInternal": true,
+          "CalleeAssemblyName": "sample_project",
+          "FilePath": "Form1.vb",
+          "Span": {
+            "StartLine": 22,
+            "StartColumn": 7,
+            "EndLine": 22,
+            "EndColumn": 21
+          }
+        },
+        {
+          "CallerMethodSymbolId": "M:sample_project.Form1.Button2_Click(System.Object,System.EventArgs)",
+          "CallerDisplayName": "sample_project.Form1.Button2_Click(Object, System.EventArgs)",
+          "CalleeMethodSymbolId": "M:sample_project.Form1.TestFlow(System.Int32)",
+          "CalleeDisplayName": "sample_project.Form1.TestFlow(Integer)",
+          "IsProjectInternal": true,
+          "CalleeAssemblyName": "sample_project",
+          "FilePath": "Form1.vb",
+          "Span": {
+            "StartLine": 25,
+            "StartColumn": 5,
+            "EndLine": 25,
+            "EndColumn": 17
+          }
+        },
+        {
+          "CallerMethodSymbolId": "M:sample_project.Form1.Button2_Click(System.Object,System.EventArgs)",
+          "CallerDisplayName": "sample_project.Form1.Button2_Click(Object, System.EventArgs)",
+          "CalleeMethodSymbolId": "M:sample_project.Form1.TestFlow(System.Int32)",
+          "CalleeDisplayName": "sample_project.Form1.TestFlow(Integer)",
+          "IsProjectInternal": true,
+          "CalleeAssemblyName": "sample_project",
+          "FilePath": "Form1.vb",
+          "Span": {
+            "StartLine": 26,
+            "StartColumn": 5,
+            "EndLine": 26,
+            "EndColumn": 16
+          }
+        },
+        {
+          "CallerMethodSymbolId": "M:sample_project.GlobalContext.TestFieldUsage",
+          "CallerDisplayName": "sample_project.GlobalContext.TestFieldUsage()",
+          "CalleeMethodSymbolId": "M:System.Diagnostics.Debug.Print(System.String)",
+          "CalleeDisplayName": "System.Diagnostics.Debug.Print(String)",
+          "IsProjectInternal": false,
+          "CalleeAssemblyName": "System.Runtime",
+          "FilePath": "GlobalContext.vb",
+          "Span": {
+            "StartLine": 38,
+            "StartColumn": 5,
+            "EndLine": 38,
+            "EndColumn": 24
+          }
+        },
+        {
+          "CallerMethodSymbolId": "M:sample_project.GlobalContext.BuildStatusMessage(System.String,System.Int32[])",
+          "CallerDisplayName": "sample_project.GlobalContext.BuildStatusMessage(String, Integer())",
+          "CalleeMethodSymbolId": "M:System.String.IsNullOrWhiteSpace(System.String)",
+          "CalleeDisplayName": "String.IsNullOrWhiteSpace(String)",
+          "IsProjectInternal": false,
+          "CalleeAssemblyName": "System.Runtime",
+          "FilePath": "GlobalContext.vb",
+          "Span": {
+            "StartLine": 45,
+            "StartColumn": 8,
+            "EndLine": 45,
+            "EndColumn": 43
+          }
+        },
+        {
+          "CallerMethodSymbolId": "M:sample_project.GlobalContext.CountMatchingCells(System.Int32[0:,0:],System.Int32)",
+          "CallerDisplayName": "sample_project.GlobalContext.CountMatchingCells(Integer(*,*), Integer)",
+          "CalleeMethodSymbolId": "M:System.Array.GetLength(System.Int32)",
+          "CalleeDisplayName": "System.Array.GetLength(Integer)",
+          "IsProjectInternal": false,
+          "CalleeAssemblyName": "System.Runtime",
+          "FilePath": "GlobalContext.vb",
+          "Span": {
+            "StartLine": 73,
+            "StartColumn": 31,
+            "EndLine": 73,
+            "EndColumn": 50
+          }
+        },
+        {
+          "CallerMethodSymbolId": "M:sample_project.GlobalContext.CountMatchingCells(System.Int32[0:,0:],System.Int32)",
+          "CallerDisplayName": "sample_project.GlobalContext.CountMatchingCells(Integer(*,*), Integer)",
+          "CalleeMethodSymbolId": "M:System.Array.GetLength(System.Int32)",
+          "CalleeDisplayName": "System.Array.GetLength(Integer)",
+          "IsProjectInternal": false,
+          "CalleeAssemblyName": "System.Runtime",
+          "FilePath": "GlobalContext.vb",
+          "Span": {
+            "StartLine": 74,
+            "StartColumn": 36,
+            "EndLine": 74,
+            "EndColumn": 55
+          }
+        },
+        {
+          "CallerMethodSymbolId": "M:sample_project.DependencySampleA.CreateB(sample_project.DependencySampleB)",
+          "CallerDisplayName": "sample_project.DependencySampleA.CreateB(sample_project.DependencySampleB)",
+          "CalleeMethodSymbolId": "M:sample_project.DependencySampleB.DoSomething",
+          "CalleeDisplayName": "sample_project.DependencySampleB.DoSomething()",
+          "IsProjectInternal": true,
+          "CalleeAssemblyName": "sample_project",
+          "FilePath": "GlobalContext.vb",
+          "Span": {
+            "StartLine": 92,
+            "StartColumn": 5,
+            "EndLine": 92,
+            "EndColumn": 25
+          }
+        }
+      ],
+      "FieldUsages": [
+        {
+          "FieldSymbolId": "F:sample_project.Form1.number",
+          "MethodSymbolId": "M:sample_project.Form1.Button2_Click(System.Object,System.EventArgs)",
+          "UsageKind": "Read",
+          "FilePath": "Form1.vb",
+          "Span": {
+            "StartLine": 21,
+            "StartColumn": 8,
+            "EndLine": 21,
+            "EndColumn": 14
+          }
+        },
+        {
+          "FieldSymbolId": "F:sample_project.GlobalContext._count",
+          "MethodSymbolId": "M:sample_project.GlobalContext.TestFieldUsage",
+          "UsageKind": "Write",
+          "FilePath": "GlobalContext.vb",
+          "Span": {
+            "StartLine": 37,
+            "StartColumn": 5,
+            "EndLine": 37,
+            "EndColumn": 11
+          }
+        },
+        {
+          "FieldSymbolId": "F:sample_project.GlobalContext._count",
+          "MethodSymbolId": "M:sample_project.GlobalContext.TestFieldUsage",
+          "UsageKind": "Read",
+          "FilePath": "GlobalContext.vb",
+          "Span": {
+            "StartLine": 38,
+            "StartColumn": 17,
+            "EndLine": 38,
+            "EndColumn": 23
+          }
+        },
+        {
+          "FieldSymbolId": "F:sample_project.GlobalContext._count",
+          "MethodSymbolId": "M:sample_project.GlobalContext.TestFieldUsage",
+          "UsageKind": "ReadWrite",
+          "FilePath": "GlobalContext.vb",
+          "Span": {
+            "StartLine": 39,
+            "StartColumn": 5,
+            "EndLine": 39,
+            "EndColumn": 11
+          }
+        },
+        {
+          "FieldSymbolId": "F:sample_project.GlobalContext._requestCount",
+          "MethodSymbolId": "M:sample_project.GlobalContext.BuildStatusMessage(System.String,System.Int32[])",
+          "UsageKind": "ReadWrite",
+          "FilePath": "GlobalContext.vb",
+          "Span": {
+            "StartLine": 43,
+            "StartColumn": 5,
+            "EndLine": 43,
+            "EndColumn": 18
+          }
+        },
+        {
+          "FieldSymbolId": "F:sample_project.GlobalContext._lastMessage",
+          "MethodSymbolId": "M:sample_project.GlobalContext.BuildStatusMessage(System.String,System.Int32[])",
+          "UsageKind": "Write",
+          "FilePath": "GlobalContext.vb",
+          "Span": {
+            "StartLine": 46,
+            "StartColumn": 7,
+            "EndLine": 46,
+            "EndColumn": 19
+          }
+        },
+        {
+          "FieldSymbolId": "F:sample_project.GlobalContext._lastMessage",
+          "MethodSymbolId": "M:sample_project.GlobalContext.BuildStatusMessage(System.String,System.Int32[])",
+          "UsageKind": "Read",
+          "FilePath": "GlobalContext.vb",
+          "Span": {
+            "StartLine": 47,
+            "StartColumn": 14,
+            "EndLine": 47,
+            "EndColumn": 26
+          }
+        },
+        {
+          "FieldSymbolId": "F:sample_project.GlobalContext._lastMessage",
+          "MethodSymbolId": "M:sample_project.GlobalContext.BuildStatusMessage(System.String,System.Int32[])",
+          "UsageKind": "Write",
+          "FilePath": "GlobalContext.vb",
+          "Span": {
+            "StartLine": 60,
+            "StartColumn": 7,
+            "EndLine": 60,
+            "EndColumn": 19
+          }
+        },
+        {
+          "FieldSymbolId": "F:sample_project.GlobalContext._lastMessage",
+          "MethodSymbolId": "M:sample_project.GlobalContext.BuildStatusMessage(System.String,System.Int32[])",
+          "UsageKind": "Write",
+          "FilePath": "GlobalContext.vb",
+          "Span": {
+            "StartLine": 62,
+            "StartColumn": 7,
+            "EndLine": 62,
+            "EndColumn": 19
+          }
+        },
+        {
+          "FieldSymbolId": "F:sample_project.GlobalContext._lastMessage",
+          "MethodSymbolId": "M:sample_project.GlobalContext.BuildStatusMessage(System.String,System.Int32[])",
+          "UsageKind": "Write",
+          "FilePath": "GlobalContext.vb",
+          "Span": {
+            "StartLine": 64,
+            "StartColumn": 7,
+            "EndLine": 64,
+            "EndColumn": 19
+          }
+        },
+        {
+          "FieldSymbolId": "F:sample_project.GlobalContext._lastMessage",
+          "MethodSymbolId": "M:sample_project.GlobalContext.BuildStatusMessage(System.String,System.Int32[])",
+          "UsageKind": "Read",
+          "FilePath": "GlobalContext.vb",
+          "Span": {
+            "StartLine": 67,
+            "StartColumn": 12,
+            "EndLine": 67,
+            "EndColumn": 24
+          }
+        }
+      ],
+      "TypeDependencies": [
+        {
+          "SourceTypeSymbolId": "T:sample_project.Form1",
+          "TargetTypeSymbolId": "T:sample_project.GlobalContext",
+          "Kind": "MethodCall",
+          "FilePath": "Form1.vb",
+          "Span": {
+            "StartLine": 6,
+            "StartColumn": 17,
+            "EndLine": 6,
+            "EndColumn": 95
+          }
+        },
+        {
+          "SourceTypeSymbolId": "T:sample_project.DependencySampleA",
+          "TargetTypeSymbolId": "T:sample_project.DependencySampleB",
+          "Kind": "FieldType",
+          "FilePath": "GlobalContext.vb",
+          "Span": {
+            "StartLine": 86,
+            "StartColumn": 11,
+            "EndLine": 86,
+            "EndColumn": 13
+          }
+        },
+        {
+          "SourceTypeSymbolId": "T:sample_project.DependencySampleA",
+          "TargetTypeSymbolId": "T:sample_project.DependencySampleB",
+          "Kind": "PropertyType",
+          "FilePath": "GlobalContext.vb",
+          "Span": {
+            "StartLine": 88,
+            "StartColumn": 19,
+            "EndLine": 88,
+            "EndColumn": 27
+          }
+        },
+        {
+          "SourceTypeSymbolId": "T:sample_project.DependencySampleA",
+          "TargetTypeSymbolId": "T:sample_project.DependencySampleB",
+          "Kind": "ParameterType",
+          "FilePath": "GlobalContext.vb",
+          "Span": {
+            "StartLine": 90,
+            "StartColumn": 27,
+            "EndLine": 90,
+            "EndColumn": 32
+          }
+        },
+        {
+          "SourceTypeSymbolId": "T:sample_project.DependencySampleA",
+          "TargetTypeSymbolId": "T:sample_project.DependencySampleB",
+          "Kind": "ReturnType",
+          "FilePath": "GlobalContext.vb",
+          "Span": {
+            "StartLine": 90,
+            "StartColumn": 19,
+            "EndLine": 90,
+            "EndColumn": 26
+          }
+        },
+        {
+          "SourceTypeSymbolId": "T:sample_project.DependencySampleA",
+          "TargetTypeSymbolId": "T:sample_project.DependencySampleB",
+          "Kind": "ObjectCreation",
+          "FilePath": "GlobalContext.vb",
+          "Span": {
+            "StartLine": 91,
+            "StartColumn": 18,
+            "EndLine": 91,
+            "EndColumn": 41
+          }
+        },
+        {
+          "SourceTypeSymbolId": "T:sample_project.DependencySampleA",
+          "TargetTypeSymbolId": "T:sample_project.DependencySampleB",
+          "Kind": "MethodCall",
+          "FilePath": "GlobalContext.vb",
+          "Span": {
+            "StartLine": 92,
+            "StartColumn": 5,
+            "EndLine": 92,
+            "EndColumn": 25
+          }
+        }
+      ],
+      "ControlFlows": [
+        {
+          "MethodId": "M:sample_project.GlobalContext.BuildStatusMessage(System.String,System.Int32[])",
+          "MethodName": "BuildStatusMessage",
+          "Nodes": [
+            {
+              "Id": 0,
+              "Kind": "Entry",
+              "Text": "",
+              "SourceLocation": null
+            },
+            {
+              "Id": 1,
+              "Kind": "Block",
+              "Text": "_requestCount \u002B= 1\r\nCondition: String.IsNullOrWhiteSpace(userName)",
+              "SourceLocation": {
+                "StartLine": 43,
+                "StartColumn": 5,
+                "EndLine": 43,
+                "EndColumn": 23
+              }
+            },
+            {
+              "Id": 2,
+              "Kind": "Block",
+              "Text": "_lastMessage = Unknown user\r\nReturn _lastMessage",
+              "SourceLocation": {
+                "StartLine": 46,
+                "StartColumn": 7,
+                "EndLine": 46,
+                "EndColumn": 36
+              }
+            },
+            {
+              "Id": 3,
+              "Kind": "Block",
+              "Text": "total = 0",
+              "SourceLocation": {
+                "StartLine": 50,
+                "StartColumn": 9,
+                "EndLine": 50,
+                "EndColumn": 29
+              }
+            },
+            {
+              "Id": 4,
+              "Kind": "Block",
+              "Text": "",
+              "SourceLocation": {
+                "StartLine": 51,
+                "StartColumn": 34,
+                "EndLine": 51,
+                "EndColumn": 40
+              }
+            },
+            {
+              "Id": 5,
+              "Kind": "Block",
+              "Text": "Condition: scores",
+              "SourceLocation": {
+                "StartLine": 51,
+                "StartColumn": 34,
+                "EndLine": 51,
+                "EndColumn": 40
+              }
+            },
+            {
+              "Id": 6,
+              "Kind": "Block",
+              "Text": "score = Current\r\nCondition: score \u003C 0",
+              "SourceLocation": {
+                "StartLine": 51,
+                "StartColumn": 14,
+                "EndLine": 51,
+                "EndColumn": 30
+              }
+            },
+            {
+              "Id": 7,
+              "Kind": "Block",
+              "Text": "total \u002B= score",
+              "SourceLocation": {
+                "StartLine": 56,
+                "StartColumn": 7,
+                "EndLine": 56,
+                "EndColumn": 21
+              }
+            },
+            {
+              "Id": 8,
+              "Kind": "Block",
+              "Text": "Condition: total \u003E 100",
+              "SourceLocation": {
+                "StartLine": 59,
+                "StartColumn": 8,
+                "EndLine": 59,
+                "EndColumn": 19
+              }
+            },
+            {
+              "Id": 9,
+              "Kind": "Block",
+              "Text": "_lastMessage = $\u0022{userName}: High\u0022",
+              "SourceLocation": {
+                "StartLine": 60,
+                "StartColumn": 7,
+                "EndLine": 60,
+                "EndColumn": 41
+              }
+            },
+            {
+              "Id": 10,
+              "Kind": "Block",
+              "Text": "Condition: total \u003E 50",
+              "SourceLocation": {
+                "StartLine": 61,
+                "StartColumn": 12,
+                "EndLine": 61,
+                "EndColumn": 22
+              }
+            },
+            {
+              "Id": 11,
+              "Kind": "Block",
+              "Text": "_lastMessage = $\u0022{userName}: Medium\u0022",
+              "SourceLocation": {
+                "StartLine": 62,
+                "StartColumn": 7,
+                "EndLine": 62,
+                "EndColumn": 43
+              }
+            },
+            {
+              "Id": 12,
+              "Kind": "Block",
+              "Text": "_lastMessage = $\u0022{userName}: Low\u0022",
+              "SourceLocation": {
+                "StartLine": 64,
+                "StartColumn": 7,
+                "EndLine": 64,
+                "EndColumn": 40
+              }
+            },
+            {
+              "Id": 13,
+              "Kind": "Block",
+              "Text": "Return _lastMessage",
+              "SourceLocation": {
+                "StartLine": 67,
+                "StartColumn": 12,
+                "EndLine": 67,
+                "EndColumn": 24
+              }
+            },
+            {
+              "Id": 14,
+              "Kind": "Exit",
+              "Text": "",
+              "SourceLocation": null
+            }
+          ],
+          "Edges": [
+            {
+              "From": 0,
+              "To": 1,
+              "Kind": "FallThrough",
+              "Condition": null
+            },
+            {
+              "From": 1,
+              "To": 2,
+              "Kind": "ConditionalTrue",
+              "Condition": "String.IsNullOrWhiteSpace(userName)"
+            },
+            {
+              "From": 1,
+              "To": 3,
+              "Kind": "ConditionalFalse",
+              "Condition": "String.IsNullOrWhiteSpace(userName)"
+            },
+            {
+              "From": 2,
+              "To": 14,
+              "Kind": "Return",
+              "Condition": null
+            },
+            {
+              "From": 3,
+              "To": 4,
+              "Kind": "FallThrough",
+              "Condition": null
+            },
+            {
+              "From": 4,
+              "To": 5,
+              "Kind": "FallThrough",
+              "Condition": null
+            },
+            {
+              "From": 5,
+              "To": 6,
+              "Kind": "ConditionalTrue",
+              "Condition": "scores"
+            },
+            {
+              "From": 5,
+              "To": 8,
+              "Kind": "ConditionalFalse",
+              "Condition": "scores"
+            },
+            {
+              "From": 6,
+              "To": 5,
+              "Kind": "ConditionalTrue",
+              "Condition": "score \u003C 0"
+            },
+            {
+              "From": 6,
+              "To": 7,
+              "Kind": "ConditionalFalse",
+              "Condition": "score \u003C 0"
+            },
+            {
+              "From": 7,
+              "To": 5,
+              "Kind": "FallThrough",
+              "Condition": null
+            },
+            {
+              "From": 8,
+              "To": 9,
+              "Kind": "ConditionalTrue",
+              "Condition": "total \u003E 100"
+            },
+            {
+              "From": 8,
+              "To": 10,
+              "Kind": "ConditionalFalse",
+              "Condition": "total \u003E 100"
+            },
+            {
+              "From": 9,
+              "To": 13,
+              "Kind": "FallThrough",
+              "Condition": null
+            },
+            {
+              "From": 10,
+              "To": 11,
+              "Kind": "ConditionalTrue",
+              "Condition": "total \u003E 50"
+            },
+            {
+              "From": 10,
+              "To": 12,
+              "Kind": "ConditionalFalse",
+              "Condition": "total \u003E 50"
+            },
+            {
+              "From": 11,
+              "To": 13,
+              "Kind": "FallThrough",
+              "Condition": null
+            },
+            {
+              "From": 12,
+              "To": 13,
+              "Kind": "FallThrough",
+              "Condition": null
+            },
+            {
+              "From": 13,
+              "To": 14,
+              "Kind": "Return",
+              "Condition": null
+            }
+          ]
+        },
+        {
+          "MethodId": "M:sample_project.Form1.Button1_Click(System.Object,System.EventArgs)",
+          "MethodName": "Button1_Click",
+          "Nodes": [
+            {
+              "Id": 0,
+              "Kind": "Entry",
+              "Text": "",
+              "SourceLocation": null
+            },
+            {
+              "Id": 1,
+              "Kind": "Block",
+              "Text": "Condition: True",
+              "SourceLocation": {
+                "StartLine": 10,
+                "StartColumn": 8,
+                "EndLine": 10,
+                "EndColumn": 12
+              }
+            },
+            {
+              "Id": 2,
+              "Kind": "Block",
+              "Text": "Debug.Print(\u0022Hello world\u0022)",
+              "SourceLocation": {
+                "StartLine": 11,
+                "StartColumn": 7,
+                "EndLine": 11,
+                "EndColumn": 33
+              }
+            },
+            {
+              "Id": 3,
+              "Kind": "Block",
+              "Text": "TestFunction()",
+              "SourceLocation": {
+                "StartLine": 14,
+                "StartColumn": 5,
+                "EndLine": 14,
+                "EndColumn": 19
+              }
+            },
+            {
+              "Id": 4,
+              "Kind": "Exit",
+              "Text": "",
+              "SourceLocation": null
+            }
+          ],
+          "Edges": [
+            {
+              "From": 0,
+              "To": 1,
+              "Kind": "FallThrough",
+              "Condition": null
+            },
+            {
+              "From": 1,
+              "To": 2,
+              "Kind": "ConditionalTrue",
+              "Condition": "True"
+            },
+            {
+              "From": 1,
+              "To": 3,
+              "Kind": "ConditionalFalse",
+              "Condition": "True"
+            },
+            {
+              "From": 2,
+              "To": 3,
+              "Kind": "FallThrough",
+              "Condition": null
+            },
+            {
+              "From": 3,
+              "To": 4,
+              "Kind": "FallThrough",
+              "Condition": null
+            }
+          ]
+        },
+        {
+          "MethodId": "M:sample_project.Form1.Button2_Click(System.Object,System.EventArgs)",
+          "MethodName": "Button2_Click",
+          "Nodes": [
+            {
+              "Id": 0,
+              "Kind": "Entry",
+              "Text": "",
+              "SourceLocation": null
+            },
+            {
+              "Id": 1,
+              "Kind": "Block",
+              "Text": "MessageBox.Show(\u0022Hello world\u0022)\r\nCondition: number \u003E 0",
+              "SourceLocation": {
+                "StartLine": 19,
+                "StartColumn": 5,
+                "EndLine": 19,
+                "EndColumn": 35
+              }
+            },
+            {
+              "Id": 2,
+              "Kind": "Block",
+              "Text": "TestFunction()",
+              "SourceLocation": {
+                "StartLine": 22,
+                "StartColumn": 7,
+                "EndLine": 22,
+                "EndColumn": 21
+              }
+            },
+            {
+              "Id": 3,
+              "Kind": "Block",
+              "Text": "TestFlow(10)\r\nTestFlow(0)",
+              "SourceLocation": {
+                "StartLine": 25,
+                "StartColumn": 5,
+                "EndLine": 25,
+                "EndColumn": 17
+              }
+            },
+            {
+              "Id": 4,
+              "Kind": "Exit",
+              "Text": "",
+              "SourceLocation": null
+            }
+          ],
+          "Edges": [
+            {
+              "From": 0,
+              "To": 1,
+              "Kind": "FallThrough",
+              "Condition": null
+            },
+            {
+              "From": 1,
+              "To": 2,
+              "Kind": "ConditionalTrue",
+              "Condition": "number \u003E 0"
+            },
+            {
+              "From": 1,
+              "To": 3,
+              "Kind": "ConditionalFalse",
+              "Condition": "number \u003E 0"
+            },
+            {
+              "From": 2,
+              "To": 3,
+              "Kind": "FallThrough",
+              "Condition": null
+            },
+            {
+              "From": 3,
+              "To": 4,
+              "Kind": "FallThrough",
+              "Condition": null
+            }
+          ]
+        },
+        {
+          "MethodId": "M:sample_project.GlobalContext.CountMatchingCells(System.Int32[0:,0:],System.Int32)",
+          "MethodName": "CountMatchingCells",
+          "Nodes": [
+            {
+              "Id": 0,
+              "Kind": "Entry",
+              "Text": "",
+              "SourceLocation": null
+            },
+            {
+              "Id": 1,
+              "Kind": "Block",
+              "Text": "matches = 0",
+              "SourceLocation": {
+                "StartLine": 71,
+                "StartColumn": 9,
+                "EndLine": 71,
+                "EndColumn": 31
+              }
+            },
+            {
+              "Id": 2,
+              "Kind": "Block",
+              "Text": "row = 0",
+              "SourceLocation": {
+                "StartLine": 73,
+                "StartColumn": 9,
+                "EndLine": 73,
+                "EndColumn": 23
+              }
+            },
+            {
+              "Id": 3,
+              "Kind": "Block",
+              "Text": "Condition: row \u003C= matrix.GetLength(0) - 1",
+              "SourceLocation": {
+                "StartLine": 73,
+                "StartColumn": 31,
+                "EndLine": 73,
+                "EndColumn": 54
+              }
+            },
+            {
+              "Id": 4,
+              "Kind": "Block",
+              "Text": "column = 0",
+              "SourceLocation": {
+                "StartLine": 74,
+                "StartColumn": 11,
+                "EndLine": 74,
+                "EndColumn": 28
+              }
+            },
+            {
+              "Id": 5,
+              "Kind": "Block",
+              "Text": "Condition: column \u003C= matrix.GetLength(1) - 1",
+              "SourceLocation": {
+                "StartLine": 74,
+                "StartColumn": 36,
+                "EndLine": 74,
+                "EndColumn": 59
+              }
+            },
+            {
+              "Id": 6,
+              "Kind": "Block",
+              "Text": "Condition: matrix(row, column) \u003E= threshold",
+              "SourceLocation": {
+                "StartLine": 75,
+                "StartColumn": 12,
+                "EndLine": 75,
+                "EndColumn": 44
+              }
+            },
+            {
+              "Id": 7,
+              "Kind": "Block",
+              "Text": "matches \u002B= 1",
+              "SourceLocation": {
+                "StartLine": 76,
+                "StartColumn": 11,
+                "EndLine": 76,
+                "EndColumn": 23
+              }
+            },
+            {
+              "Id": 8,
+              "Kind": "Block",
+              "Text": "column = column \u002B 1",
+              "SourceLocation": {
+                "StartLine": 74,
+                "StartColumn": 11,
+                "EndLine": 74,
+                "EndColumn": 28
+              }
+            },
+            {
+              "Id": 9,
+              "Kind": "Block",
+              "Text": "row = row \u002B 1",
+              "SourceLocation": {
+                "StartLine": 73,
+                "StartColumn": 9,
+                "EndLine": 73,
+                "EndColumn": 23
+              }
+            },
+            {
+              "Id": 10,
+              "Kind": "Block",
+              "Text": "Return matches",
+              "SourceLocation": {
+                "StartLine": 81,
+                "StartColumn": 12,
+                "EndLine": 81,
+                "EndColumn": 19
+              }
+            },
+            {
+              "Id": 11,
+              "Kind": "Exit",
+              "Text": "",
+              "SourceLocation": null
+            }
+          ],
+          "Edges": [
+            {
+              "From": 0,
+              "To": 1,
+              "Kind": "FallThrough",
+              "Condition": null
+            },
+            {
+              "From": 1,
+              "To": 2,
+              "Kind": "FallThrough",
+              "Condition": null
+            },
+            {
+              "From": 2,
+              "To": 3,
+              "Kind": "FallThrough",
+              "Condition": null
+            },
+            {
+              "From": 3,
+              "To": 4,
+              "Kind": "ConditionalTrue",
+              "Condition": "row \u003C= matrix.GetLength(0) - 1"
+            },
+            {
+              "From": 3,
+              "To": 10,
+              "Kind": "ConditionalFalse",
+              "Condition": "row \u003C= matrix.GetLength(0) - 1"
+            },
+            {
+              "From": 4,
+              "To": 5,
+              "Kind": "FallThrough",
+              "Condition": null
+            },
+            {
+              "From": 5,
+              "To": 6,
+              "Kind": "ConditionalTrue",
+              "Condition": "column \u003C= matrix.GetLength(1) - 1"
+            },
+            {
+              "From": 5,
+              "To": 9,
+              "Kind": "ConditionalFalse",
+              "Condition": "column \u003C= matrix.GetLength(1) - 1"
+            },
+            {
+              "From": 6,
+              "To": 7,
+              "Kind": "ConditionalTrue",
+              "Condition": "matrix(row, column) \u003E= threshold"
+            },
+            {
+              "From": 6,
+              "To": 8,
+              "Kind": "ConditionalFalse",
+              "Condition": "matrix(row, column) \u003E= threshold"
+            },
+            {
+              "From": 7,
+              "To": 8,
+              "Kind": "FallThrough",
+              "Condition": null
+            },
+            {
+              "From": 8,
+              "To": 5,
+              "Kind": "FallThrough",
+              "Condition": null
+            },
+            {
+              "From": 9,
+              "To": 3,
+              "Kind": "FallThrough",
+              "Condition": null
+            },
+            {
+              "From": 10,
+              "To": 11,
+              "Kind": "Return",
+              "Condition": null
+            }
+          ]
+        },
+        {
+          "MethodId": "M:sample_project.DependencySampleA.CreateB(sample_project.DependencySampleB)",
+          "MethodName": "CreateB",
+          "Nodes": [
+            {
+              "Id": 0,
+              "Kind": "Entry",
+              "Text": "",
+              "SourceLocation": null
+            },
+            {
+              "Id": 1,
+              "Kind": "Block",
+              "Text": "result = New DependencySampleB()\r\nresult.DoSomething()\r\nReturn result",
+              "SourceLocation": {
+                "StartLine": 91,
+                "StartColumn": 9,
+                "EndLine": 91,
+                "EndColumn": 41
+              }
+            },
+            {
+              "Id": 2,
+              "Kind": "Exit",
+              "Text": "",
+              "SourceLocation": null
+            }
+          ],
+          "Edges": [
+            {
+              "From": 0,
+              "To": 1,
+              "Kind": "FallThrough",
+              "Condition": null
+            },
+            {
+              "From": 1,
+              "To": 2,
+              "Kind": "Return",
+              "Condition": null
+            }
+          ]
+        },
+        {
+          "MethodId": "M:sample_project.DependencySampleB.DoSomething",
+          "MethodName": "DoSomething",
+          "Nodes": [
+            {
+              "Id": 0,
+              "Kind": "Entry",
+              "Text": "",
+              "SourceLocation": null
+            },
+            {
+              "Id": 1,
+              "Kind": "Exit",
+              "Text": "",
+              "SourceLocation": null
+            }
+          ],
+          "Edges": [
+            {
+              "From": 0,
+              "To": 1,
+              "Kind": "FallThrough",
+              "Condition": null
+            }
+          ]
+        },
+        {
+          "MethodId": "M:sample_project.GlobalContext.TestFieldUsage",
+          "MethodName": "TestFieldUsage",
+          "Nodes": [
+            {
+              "Id": 0,
+              "Kind": "Entry",
+              "Text": "",
+              "SourceLocation": null
+            },
+            {
+              "Id": 1,
+              "Kind": "Block",
+              "Text": "_count = 10\r\nDebug.Print(_count)\r\n_count \u002B= 1",
+              "SourceLocation": {
+                "StartLine": 37,
+                "StartColumn": 5,
+                "EndLine": 37,
+                "EndColumn": 16
+              }
+            },
+            {
+              "Id": 2,
+              "Kind": "Exit",
+              "Text": "",
+              "SourceLocation": null
+            }
+          ],
+          "Edges": [
+            {
+              "From": 0,
+              "To": 1,
+              "Kind": "FallThrough",
+              "Condition": null
+            },
+            {
+              "From": 1,
+              "To": 2,
+              "Kind": "FallThrough",
+              "Condition": null
+            }
+          ]
+        },
+        {
+          "MethodId": "M:sample_project.Form1.TestFlow(System.Int32)",
+          "MethodName": "TestFlow",
+          "Nodes": [
+            {
+              "Id": 0,
+              "Kind": "Entry",
+              "Text": "",
+              "SourceLocation": null
+            },
+            {
+              "Id": 1,
+              "Kind": "Block",
+              "Text": "Condition: value \u003E 10",
+              "SourceLocation": {
+                "StartLine": 31,
+                "StartColumn": 8,
+                "EndLine": 31,
+                "EndColumn": 18
+              }
+            },
+            {
+              "Id": 2,
+              "Kind": "Block",
+              "Text": "value = value * 2",
+              "SourceLocation": {
+                "StartLine": 32,
+                "StartColumn": 7,
+                "EndLine": 32,
+                "EndColumn": 24
+              }
+            },
+            {
+              "Id": 3,
+              "Kind": "Block",
+              "Text": "value = value \u002B 1",
+              "SourceLocation": {
+                "StartLine": 34,
+                "StartColumn": 7,
+                "EndLine": 34,
+                "EndColumn": 24
+              }
+            },
+            {
+              "Id": 4,
+              "Kind": "Block",
+              "Text": "i = 0",
+              "SourceLocation": {
+                "StartLine": 37,
+                "StartColumn": 9,
+                "EndLine": 37,
+                "EndColumn": 21
+              }
+            },
+            {
+              "Id": 5,
+              "Kind": "Block",
+              "Text": "Condition: i \u003C= 2",
+              "SourceLocation": {
+                "StartLine": 37,
+                "StartColumn": 29,
+                "EndLine": 37,
+                "EndColumn": 30
+              }
+            },
+            {
+              "Id": 6,
+              "Kind": "Block",
+              "Text": "value \u002B= i\r\ni = i \u002B 1",
+              "SourceLocation": {
+                "StartLine": 38,
+                "StartColumn": 7,
+                "EndLine": 38,
+                "EndColumn": 17
+              }
+            },
+            {
+              "Id": 7,
+              "Kind": "Block",
+              "Text": "Return value",
+              "SourceLocation": {
+                "StartLine": 41,
+                "StartColumn": 12,
+                "EndLine": 41,
+                "EndColumn": 17
+              }
+            },
+            {
+              "Id": 8,
+              "Kind": "Exit",
+              "Text": "",
+              "SourceLocation": null
+            }
+          ],
+          "Edges": [
+            {
+              "From": 0,
+              "To": 1,
+              "Kind": "FallThrough",
+              "Condition": null
+            },
+            {
+              "From": 1,
+              "To": 2,
+              "Kind": "ConditionalTrue",
+              "Condition": "value \u003E 10"
+            },
+            {
+              "From": 1,
+              "To": 3,
+              "Kind": "ConditionalFalse",
+              "Condition": "value \u003E 10"
+            },
+            {
+              "From": 2,
+              "To": 4,
+              "Kind": "FallThrough",
+              "Condition": null
+            },
+            {
+              "From": 3,
+              "To": 4,
+              "Kind": "FallThrough",
+              "Condition": null
+            },
+            {
+              "From": 4,
+              "To": 5,
+              "Kind": "FallThrough",
+              "Condition": null
+            },
+            {
+              "From": 5,
+              "To": 6,
+              "Kind": "ConditionalTrue",
+              "Condition": "i \u003C= 2"
+            },
+            {
+              "From": 5,
+              "To": 7,
+              "Kind": "ConditionalFalse",
+              "Condition": "i \u003C= 2"
+            },
+            {
+              "From": 6,
+              "To": 5,
+              "Kind": "FallThrough",
+              "Condition": null
+            },
+            {
+              "From": 7,
+              "To": 8,
+              "Kind": "Return",
+              "Condition": null
+            }
+          ]
+        },
+        {
+          "MethodId": "M:sample_project.Form1.TestFunction",
+          "MethodName": "TestFunction",
+          "Nodes": [
+            {
+              "Id": 0,
+              "Kind": "Entry",
+              "Text": "",
+              "SourceLocation": null
+            },
+            {
+              "Id": 1,
+              "Kind": "Block",
+              "Text": "Debug.Print(\u0022Call Test Function\u0022)\r\nDebug.Print(GlobalContext.Instance.BuildStatusMessage(\u0022Form1\u0022, New Integer() {10, 20, 30}))",
+              "SourceLocation": {
+                "StartLine": 5,
+                "StartColumn": 5,
+                "EndLine": 5,
+                "EndColumn": 38
+              }
+            },
+            {
+              "Id": 2,
+              "Kind": "Exit",
+              "Text": "",
+              "SourceLocation": null
+            }
+          ],
+          "Edges": [
+            {
+              "From": 0,
+              "To": 1,
+              "Kind": "FallThrough",
+              "Condition": null
+            },
+            {
+              "From": 1,
+              "To": 2,
+              "Kind": "FallThrough",
+              "Condition": null
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

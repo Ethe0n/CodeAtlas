@@ -86,6 +86,33 @@ public sealed class VbSyntaxStructureExtractor
             .ToArray();
     }
 
+    public IReadOnlyList<TypeDependencyRelation> ExtractTypeDependencies(
+        SyntaxNode root,
+        SemanticModel semanticModel,
+        string? filePath,
+        string? projectDirectory)
+    {
+        var isDesignerDocument = IsDesignerDocument(filePath);
+        if (isDesignerDocument)
+        {
+            return Array.Empty<TypeDependencyRelation>();
+        }
+
+        var declarationDependencies = root
+            .DescendantNodes()
+            .OfType<ClassBlockSyntax>()
+            .SelectMany(classBlock => ExtractDeclarationTypeDependencies(classBlock, semanticModel, filePath, projectDirectory));
+
+        var operationDependencies = root
+            .DescendantNodes()
+            .OfType<MethodBlockSyntax>()
+            .SelectMany(methodBlock => ExtractOperationTypeDependencies(methodBlock, semanticModel, filePath, projectDirectory));
+
+        return declarationDependencies
+            .Concat(operationDependencies)
+            .ToArray();
+    }
+
     private static TypeStructure? ExtractClass(
         ClassBlockSyntax classBlock,
         SemanticModel semanticModel,
@@ -379,6 +406,150 @@ public sealed class VbSyntaxStructureExtractor
         }
     }
 
+    private static IEnumerable<TypeDependencyRelation> ExtractDeclarationTypeDependencies(
+        ClassBlockSyntax classBlock,
+        SemanticModel semanticModel,
+        string? filePath,
+        string? projectDirectory)
+    {
+        if (semanticModel.GetDeclaredSymbol(classBlock.ClassStatement) is not INamedTypeSymbol typeSymbol)
+        {
+            yield break;
+        }
+
+        var sourceTypeSymbolId = GetSymbolId(typeSymbol);
+        foreach (var member in typeSymbol.GetMembers())
+        {
+            if (member is IFieldSymbol { IsImplicitlyDeclared: false } fieldSymbol)
+            {
+                foreach (var dependency in CreateTypeDependencies(
+                    sourceTypeSymbolId,
+                    fieldSymbol.Type,
+                    TypeDependencyKind.FieldType,
+                    GetSourceLocationInFile(fieldSymbol, filePath),
+                    projectDirectory))
+                {
+                    yield return dependency;
+                }
+
+                continue;
+            }
+
+            if (member is IPropertySymbol { IsImplicitlyDeclared: false } propertySymbol)
+            {
+                foreach (var dependency in CreateTypeDependencies(
+                    sourceTypeSymbolId,
+                    propertySymbol.Type,
+                    TypeDependencyKind.PropertyType,
+                    GetSourceLocationInFile(propertySymbol, filePath),
+                    projectDirectory))
+                {
+                    yield return dependency;
+                }
+
+                continue;
+            }
+
+            if (member is not IMethodSymbol { IsImplicitlyDeclared: false } methodSymbol)
+            {
+                continue;
+            }
+
+            var methodLocation = GetSourceLocationInFile(methodSymbol, filePath);
+            if (methodLocation is null)
+            {
+                continue;
+            }
+
+            foreach (var parameter in methodSymbol.Parameters)
+            {
+                var parameterLocation = GetSourceLocationInFile(parameter, filePath) ?? methodLocation;
+                foreach (var dependency in CreateTypeDependencies(
+                    sourceTypeSymbolId,
+                    parameter.Type,
+                    TypeDependencyKind.ParameterType,
+                    parameterLocation,
+                    projectDirectory))
+                {
+                    yield return dependency;
+                }
+            }
+
+            if (methodSymbol.ReturnsVoid)
+            {
+                continue;
+            }
+
+            foreach (var dependency in CreateTypeDependencies(
+                sourceTypeSymbolId,
+                methodSymbol.ReturnType,
+                TypeDependencyKind.ReturnType,
+                methodLocation,
+                projectDirectory))
+            {
+                yield return dependency;
+            }
+        }
+    }
+
+    private static IEnumerable<TypeDependencyRelation> ExtractOperationTypeDependencies(
+        MethodBlockSyntax methodBlock,
+        SemanticModel semanticModel,
+        string? filePath,
+        string? projectDirectory)
+    {
+        var statement = methodBlock.SubOrFunctionStatement;
+        if (semanticModel.GetDeclaredSymbol(statement) is not IMethodSymbol methodSymbol)
+        {
+            yield break;
+        }
+
+        var methodSyntax = methodBlock.SyntaxTree.GetRoot().FindNode(methodBlock.GetLocation().SourceSpan);
+        if (IsGenerated(methodSyntax, methodSymbol))
+        {
+            yield break;
+        }
+
+        if (semanticModel.GetOperation(methodBlock) is not IBlockOperation operation)
+        {
+            yield break;
+        }
+
+        var sourceTypeSymbolId = GetSymbolId(methodSymbol.ContainingType);
+        foreach (var descendant in DescendantsAndSelf(operation))
+        {
+            if (descendant is IObjectCreationOperation objectCreation &&
+                objectCreation.Type is not null)
+            {
+                foreach (var dependency in CreateTypeDependencies(
+                    sourceTypeSymbolId,
+                    objectCreation.Type,
+                    TypeDependencyKind.ObjectCreation,
+                    objectCreation.Syntax.GetLocation(),
+                    projectDirectory))
+                {
+                    yield return dependency;
+                }
+
+                continue;
+            }
+
+            if (descendant is IInvocationOperation invocation &&
+                invocation.TargetMethod.ContainingType is not null)
+            {
+                foreach (var dependency in CreateTypeDependencies(
+                    sourceTypeSymbolId,
+                    invocation.TargetMethod.ContainingType,
+                    TypeDependencyKind.MethodCall,
+                    invocation.Syntax.GetLocation(),
+                    projectDirectory))
+                {
+                    yield return dependency;
+                }
+            }
+        }
+    }
+
     private static IEnumerable<UiControlInfo> ExtractUiControls(
         ClassBlockSyntax classBlock,
         SemanticModel semanticModel,
@@ -440,6 +611,61 @@ public sealed class VbSyntaxStructureExtractor
         }
 
         return FieldUsageKind.Read;
+    }
+
+    private static IEnumerable<TypeDependencyRelation> CreateTypeDependencies(
+        string sourceTypeSymbolId,
+        ITypeSymbol typeSymbol,
+        TypeDependencyKind kind,
+        Location? location,
+        string? projectDirectory)
+    {
+        if (location is null)
+        {
+            yield break;
+        }
+
+        foreach (var namedType in GetNamedTypeDependencies(typeSymbol))
+        {
+            yield return new TypeDependencyRelation(
+                sourceTypeSymbolId,
+                GetSymbolId(namedType),
+                kind,
+                ToProjectRelativePath(location.GetLineSpan().Path, projectDirectory),
+                ToSpanInfo(location.GetLineSpan()));
+        }
+    }
+
+    private static IEnumerable<INamedTypeSymbol> GetNamedTypeDependencies(ITypeSymbol typeSymbol)
+    {
+        if (typeSymbol is IArrayTypeSymbol arrayType)
+        {
+            foreach (var elementType in GetNamedTypeDependencies(arrayType.ElementType))
+            {
+                yield return elementType;
+            }
+
+            yield break;
+        }
+
+        if (typeSymbol is not INamedTypeSymbol namedType)
+        {
+            yield break;
+        }
+
+        yield return namedType.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T
+            && namedType.TypeArguments.Length == 1
+            && namedType.TypeArguments[0] is INamedTypeSymbol nullableUnderlyingType
+                ? nullableUnderlyingType
+                : namedType;
+
+        foreach (var typeArgument in namedType.TypeArguments)
+        {
+            foreach (var dependencyType in GetNamedTypeDependencies(typeArgument))
+            {
+                yield return dependencyType;
+            }
+        }
     }
 
     private static bool ContainsOperation(IOperation root, IOperation target)

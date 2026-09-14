@@ -66,12 +66,14 @@ public sealed class VbSolutionAnalyzer
                 Array.Empty<TypeStructure>(),
                 Array.Empty<CallRelation>(),
                 Array.Empty<FieldUsageRelation>(),
+                Array.Empty<TypeDependencyRelation>(),
                 Array.Empty<ControlFlowInfo>());
         }
 
         var types = new List<TypeStructure>();
         var calls = new List<CallRelation>();
         var fieldUsages = new List<FieldUsageRelation>();
+        var typeDependencies = new List<TypeDependencyRelation>();
         var controlFlows = new List<ControlFlowInfo>();
         var projectDirectory = project.FilePath is null
             ? null
@@ -94,10 +96,14 @@ public sealed class VbSolutionAnalyzer
             types.AddRange(_structureExtractor.ExtractTypes(root, semanticModel, document.FilePath, projectDirectory));
             calls.AddRange(_structureExtractor.ExtractCalls(root, semanticModel, compilation, document.FilePath, projectDirectory));
             fieldUsages.AddRange(_structureExtractor.ExtractFieldUsages(root, semanticModel, document.FilePath, projectDirectory));
+            typeDependencies.AddRange(_structureExtractor.ExtractTypeDependencies(root, semanticModel, document.FilePath, projectDirectory));
             controlFlows.AddRange(_structureExtractor.ExtractControlFlows(root, semanticModel, document.FilePath));
         }
 
         var mergedTypes = MergePartialTypes(types);
+        var internalTypeIds = mergedTypes
+            .Select(type => type.SymbolId)
+            .ToHashSet(StringComparer.Ordinal);
         var generatedMethodIds = mergedTypes
             .SelectMany(type => type.GeneratedMethods)
             .Select(method => method.SymbolId)
@@ -113,6 +119,13 @@ public sealed class VbSolutionAnalyzer
             .Where(usage => !generatedMethodIds.Contains(usage.MethodSymbolId))
             .ToArray();
 
+        var filteredTypeDependencies = typeDependencies
+            .Where(dependency =>
+                internalTypeIds.Contains(dependency.SourceTypeSymbolId) &&
+                internalTypeIds.Contains(dependency.TargetTypeSymbolId) &&
+                !string.Equals(dependency.SourceTypeSymbolId, dependency.TargetTypeSymbolId, StringComparison.Ordinal))
+            .ToArray();
+
         return new ProjectStructure(
             project.Id.Id.ToString(),
             project.Name,
@@ -121,6 +134,7 @@ public sealed class VbSolutionAnalyzer
             mergedTypes,
             filteredCalls,
             filteredFieldUsages,
+            filteredTypeDependencies,
             controlFlows
                 .Where(flow => !generatedMethodIds.Contains(flow.MethodId))
                 .OrderBy(flow => flow.MethodName, StringComparer.Ordinal)

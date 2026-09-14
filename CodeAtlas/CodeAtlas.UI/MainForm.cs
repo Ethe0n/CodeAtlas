@@ -10,6 +10,7 @@ public sealed class MainForm : Form
   private readonly TextBox _overviewText = CreateReadOnlyTextBox();
   private readonly CallGraphView _callGraphView = new();
   private readonly ControlFlowGraphView _controlFlowGraphView = new();
+  private readonly ClassDependencyView _classDependencyView = new();
   private readonly ToolStripStatusLabel _statusLabel = new("Ready");
   private readonly SplitContainer _mainSplitContainer = new();
 
@@ -25,6 +26,7 @@ public sealed class MainForm : Form
 
     BuildLayout();
     _callGraphView.MethodSelected += SelectMethodNodeBySymbolId;
+    _classDependencyView.TypeSelected += SelectTypeNodeBySymbolId;
   }
 
   protected override void OnShown(EventArgs e)
@@ -53,6 +55,7 @@ public sealed class MainForm : Form
 
     _detailsTabs.Dock = DockStyle.Fill;
     _detailsTabs.TabPages.Add(CreateTabPage("Overview", _overviewText));
+    _detailsTabs.TabPages.Add(CreateTabPage("Class Dependency", _classDependencyView));
     _detailsTabs.TabPages.Add(CreateTabPage("Call Graph", _callGraphView));
     _detailsTabs.TabPages.Add(CreateTabPage("Control Flow", _controlFlowGraphView));
     _mainSplitContainer.Panel2.Controls.Add(_detailsTabs);
@@ -272,6 +275,7 @@ public sealed class MainForm : Form
     {
       case TypeNodeContext typeContext:
         ShowClassOverview(typeContext);
+        ShowClassDependency(typeContext);
         break;
       case FieldNodeContext fieldContext:
         ShowFieldOverview(fieldContext);
@@ -497,6 +501,14 @@ public sealed class MainForm : Form
     _callGraphView.ShowGraph(context.Method, incomingCalls, outgoingCalls);
   }
 
+  private void ShowClassDependency(TypeNodeContext context)
+  {
+    _classDependencyView.ShowGraph(
+        context.Type,
+        context.Project.Types,
+        context.Project.TypeDependencies);
+  }
+
   private void ShowControlFlow(MethodNodeContext context)
   {
     var controlFlow = context.Project.ControlFlows.FirstOrDefault(flow => flow.MethodId == context.Method.SymbolId);
@@ -506,6 +518,18 @@ public sealed class MainForm : Form
   private void SelectMethodNodeBySymbolId(string methodSymbolId)
   {
     var node = FindMethodNode(_projectExplorer.Nodes, methodSymbolId);
+    if (node is null)
+    {
+      return;
+    }
+
+    node.EnsureVisible();
+    _projectExplorer.SelectedNode = node;
+  }
+
+  private void SelectTypeNodeBySymbolId(string typeSymbolId)
+  {
+    var node = FindTypeNode(_projectExplorer.Nodes, typeSymbolId);
     if (node is null)
     {
       return;
@@ -535,9 +559,30 @@ public sealed class MainForm : Form
     return null;
   }
 
+  private static TreeNode? FindTypeNode(TreeNodeCollection nodes, string typeSymbolId)
+  {
+    foreach (TreeNode node in nodes)
+    {
+      if (node.Tag is TypeNodeContext context &&
+          string.Equals(context.Type.SymbolId, typeSymbolId, StringComparison.Ordinal))
+      {
+        return node;
+      }
+
+      var match = FindTypeNode(node.Nodes, typeSymbolId);
+      if (match is not null)
+      {
+        return match;
+      }
+    }
+
+    return null;
+  }
+
   private void ClearDetails()
   {
     _overviewText.Clear();
+    _classDependencyView.ClearGraph();
     _callGraphView.ClearGraph();
     _controlFlowGraphView.ClearGraph();
   }
