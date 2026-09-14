@@ -11,6 +11,7 @@ public sealed class MainForm : Form
   private readonly CallGraphView _callGraphView = new();
   private readonly ControlFlowGraphView _controlFlowGraphView = new();
   private readonly ClassDependencyView _classDependencyView = new();
+  private readonly ProjectDependencyView _projectDependencyView = new();
   private readonly ToolStripStatusLabel _statusLabel = new("Ready");
   private readonly SplitContainer _mainSplitContainer = new();
 
@@ -27,6 +28,7 @@ public sealed class MainForm : Form
     BuildLayout();
     _callGraphView.MethodSelected += SelectMethodNodeBySymbolId;
     _classDependencyView.TypeSelected += SelectTypeNodeBySymbolId;
+    _projectDependencyView.TypeSelected += SelectTypeNodeBySymbolId;
   }
 
   protected override void OnShown(EventArgs e)
@@ -56,6 +58,7 @@ public sealed class MainForm : Form
     _detailsTabs.Dock = DockStyle.Fill;
     _detailsTabs.TabPages.Add(CreateTabPage("Overview", _overviewText));
     _detailsTabs.TabPages.Add(CreateTabPage("Class Dependency", _classDependencyView));
+    _detailsTabs.TabPages.Add(CreateTabPage("Project Dependency", _projectDependencyView));
     _detailsTabs.TabPages.Add(CreateTabPage("Call Graph", _callGraphView));
     _detailsTabs.TabPages.Add(CreateTabPage("Control Flow", _controlFlowGraphView));
     _mainSplitContainer.Panel2.Controls.Add(_detailsTabs);
@@ -275,6 +278,7 @@ public sealed class MainForm : Form
     {
       case ProjectStructure project:
         ShowProjectOverview(project);
+        ShowProjectDependency(project);
         break;
       case TypeNodeContext typeContext:
         ShowClassOverview(typeContext);
@@ -587,6 +591,10 @@ public sealed class MainForm : Form
         context.Project.TypeDependencies);
   }
 
+  private void ShowProjectDependency(ProjectStructure project)
+  {
+    _projectDependencyView.ShowGraph(project);
+  }
   private void ShowControlFlow(MethodNodeContext context)
   {
     var controlFlow = context.Project.ControlFlows.FirstOrDefault(flow => flow.MethodId == context.Method.SymbolId);
@@ -661,6 +669,7 @@ public sealed class MainForm : Form
   {
     _overviewText.Clear();
     _classDependencyView.ClearGraph();
+    _projectDependencyView.ClearGraph();
     _callGraphView.ClearGraph();
     _controlFlowGraphView.ClearGraph();
   }
@@ -758,5 +767,6 @@ public sealed class MainForm : Form
 
   private sealed record MethodNodeContext(ProjectStructure Project, TypeStructure Type, MethodStructure Method);
 }
+
 
 

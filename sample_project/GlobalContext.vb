@@ -98,3 +98,22 @@ Public Class DependencySampleB
   Public Sub DoSomething()
   End Sub
 End Class
+
+Public Class DependencySampleNestedConsumer
+  Private _summary As GlobalContext.UserScoreSummary
+End Class
+
+Namespace DependencyNamespaceA
+  Public Class Service
+  End Class
+End Namespace
+
+Namespace DependencyNamespaceB
+  Public Class Service
+  End Class
+End Namespace
+
+Public Class DuplicateTypeConsumer
+  Private _serviceA As DependencyNamespaceA.Service
+  Private _serviceB As DependencyNamespaceB.Service
+End Class
