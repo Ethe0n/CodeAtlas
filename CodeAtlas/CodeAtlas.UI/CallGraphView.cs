@@ -107,7 +107,7 @@ public sealed class CallGraphView : UserControl
     _viewer.Graph = graph;
     _viewer.Visible = true;
     _emptyLabel.Visible = false;
-    BeginInvoke(new Action(() => _viewer.ZoomF = 1.0));
+    BeginInvoke(new Action(FitGraphToViewport));
   }
 
   public void ClearGraph()
@@ -128,6 +128,14 @@ public sealed class CallGraphView : UserControl
     if (_nodeMethodSymbols.TryGetValue(node.Id, out var methodSymbolId))
     {
       MethodSelected?.Invoke(methodSymbolId);
+    }
+  }
+
+  private void FitGraphToViewport()
+  {
+    if (_viewer.Graph is not null && _viewer.Visible)
+    {
+      _viewer.FitGraphBoundingBox();
     }
   }
 

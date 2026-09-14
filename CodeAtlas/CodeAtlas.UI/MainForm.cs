@@ -11,8 +11,10 @@ public sealed class MainForm : Form
   private readonly CallGraphView _callGraphView = new();
   private readonly ControlFlowGraphView _controlFlowGraphView = new();
   private readonly ToolStripStatusLabel _statusLabel = new("Ready");
+  private readonly SplitContainer _mainSplitContainer = new();
 
   private SolutionStructure? _solution;
+  private bool _initialSplitterDistanceApplied;
 
   public MainForm()
   {
@@ -25,6 +27,13 @@ public sealed class MainForm : Form
     _callGraphView.MethodSelected += SelectMethodNodeBySymbolId;
   }
 
+  protected override void OnShown(EventArgs e)
+  {
+    base.OnShown(e);
+    PerformLayout();
+    BeginInvoke(new Action(ApplyInitialSplitterDistance));
+  }
+
   private void BuildLayout()
   {
     var menuStrip = new MenuStrip();
@@ -34,33 +43,74 @@ public sealed class MainForm : Form
     menuStrip.Items.Add(fileMenu);
     MainMenuStrip = menuStrip;
 
-    var splitContainer = new SplitContainer
-    {
-      Dock = DockStyle.Fill,
-      Orientation = Orientation.Vertical,
-      SplitterDistance = 360
-    };
+    _mainSplitContainer.Dock = DockStyle.Fill;
+    _mainSplitContainer.Orientation = Orientation.Vertical;
 
     _projectExplorer.Dock = DockStyle.Fill;
     _projectExplorer.HideSelection = false;
     _projectExplorer.AfterSelect += (_, args) => ShowNodeDetails(args.Node);
-    splitContainer.Panel1.Controls.Add(_projectExplorer);
+    _mainSplitContainer.Panel1.Controls.Add(_projectExplorer);
 
     _detailsTabs.Dock = DockStyle.Fill;
     _detailsTabs.TabPages.Add(CreateTabPage("Overview", _overviewText));
     _detailsTabs.TabPages.Add(CreateTabPage("Call Graph", _callGraphView));
     _detailsTabs.TabPages.Add(CreateTabPage("Control Flow", _controlFlowGraphView));
-    splitContainer.Panel2.Controls.Add(_detailsTabs);
+    _mainSplitContainer.Panel2.Controls.Add(_detailsTabs);
 
     var statusStrip = new StatusStrip();
     statusStrip.Items.Add(_statusLabel);
 
-    Controls.Add(splitContainer);
+    Controls.Add(_mainSplitContainer);
     Controls.Add(statusStrip);
     Controls.Add(menuStrip);
 
     menuStrip.Dock = DockStyle.Top;
     statusStrip.Dock = DockStyle.Bottom;
+  }
+
+  private void ApplyInitialSplitterDistance()
+  {
+    if (_initialSplitterDistanceApplied)
+    {
+      return;
+    }
+
+    var width = _mainSplitContainer.ClientSize.Width;
+    if (width <= 0)
+    {
+      return;
+    }
+
+    const int panel1MinSize = 180;
+    const int panel2MinSize = 300;
+
+    var availableWidth = width - _mainSplitContainer.SplitterWidth;
+    if (availableWidth <= 0)
+    {
+      return;
+    }
+
+    if (availableWidth < panel1MinSize + panel2MinSize)
+    {
+      return;
+    }
+
+    _mainSplitContainer.Panel1MinSize = panel1MinSize;
+    _mainSplitContainer.Panel2MinSize = panel2MinSize;
+
+    var minDistance = panel1MinSize;
+    var maxDistance = availableWidth - panel2MinSize;
+    if (maxDistance < minDistance)
+    {
+      return;
+    }
+
+    var desiredDistance = (int)Math.Round(availableWidth * 0.33);
+    _mainSplitContainer.SplitterDistance = Math.Clamp(
+        desiredDistance,
+        minDistance,
+        maxDistance);
+    _initialSplitterDistanceApplied = true;
   }
 
   private async Task OpenSolutionAsync()

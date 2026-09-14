@@ -34,17 +34,20 @@ public sealed class ControlFlowGraphView : UserControl
     Graph graph,
     ControlFlowInfo controlFlow)
   {
-    // 1. 일반 흐름은 위 → 아래
     foreach (var edge in controlFlow.Edges)
     {
       if (IsBackEdge(edge))
+      {
         continue;
+      }
 
       var source = graph.FindNode(GetNodeId(edge.From));
       var target = graph.FindNode(GetNodeId(edge.To));
 
       if (source is null || target is null)
+      {
         continue;
+      }
 
       graph.LayerConstraints.AddUpDownConstraint(source, target);
     }
@@ -63,33 +66,39 @@ public sealed class ControlFlowGraphView : UserControl
         ? null
         : graph.FindNode(GetNodeId(exit.Id));
 
-    // 2. Entry는 모든 노드보다 위
     if (entryNode is not null)
     {
       foreach (var node in controlFlow.Nodes)
       {
         if (node.Id == entry!.Id)
+        {
           continue;
+        }
 
         var target = graph.FindNode(GetNodeId(node.Id));
 
         if (target is not null)
+        {
           graph.LayerConstraints.AddUpDownConstraint(entryNode, target);
+        }
       }
     }
 
-    // 3. Exit는 모든 노드보다 아래
     if (exitNode is not null)
     {
       foreach (var node in controlFlow.Nodes)
       {
         if (node.Id == exit!.Id)
+        {
           continue;
+        }
 
         var source = graph.FindNode(GetNodeId(node.Id));
 
         if (source is not null)
+        {
           graph.LayerConstraints.AddUpDownConstraint(source, exitNode);
+        }
       }
     }
   }
@@ -128,7 +137,7 @@ public sealed class ControlFlowGraphView : UserControl
     _viewer.Graph = graph;
     _viewer.Visible = true;
     _emptyLabel.Visible = false;
-    BeginInvoke(new Action(() => _viewer.ZoomF = 1.0));
+    BeginInvoke(new Action(FitGraphToViewport));
   }
 
   public void ClearGraph()
@@ -136,6 +145,14 @@ public sealed class ControlFlowGraphView : UserControl
     _viewer.Graph = null;
     _viewer.Visible = false;
     _emptyLabel.Visible = true;
+  }
+
+  private void FitGraphToViewport()
+  {
+    if (_viewer.Graph is not null && _viewer.Visible)
+    {
+      _viewer.FitGraphBoundingBox();
+    }
   }
 
   private static void ConfigureGraphLayout(Graph graph)
@@ -152,11 +169,11 @@ public sealed class ControlFlowGraphView : UserControl
       NodeSeparation = 48,
       LayerSeparation = 70,
       EdgeRoutingSettings =
-            {
-                EdgeRoutingMode = Microsoft.Msagl.Core.Routing.EdgeRoutingMode.Rectilinear,
-                ConeAngle = 25,
-                Padding = 8
-            }
+      {
+        EdgeRoutingMode = Microsoft.Msagl.Core.Routing.EdgeRoutingMode.Rectilinear,
+        ConeAngle = 25,
+        Padding = 8
+      }
     };
   }
 
