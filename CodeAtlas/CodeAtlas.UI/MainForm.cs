@@ -7,6 +7,13 @@ public sealed class MainForm : Form
 {
   private readonly TreeView _projectExplorer = new();
   private readonly TabControl _detailsTabs = new();
+  private readonly TabPage _overviewTab = new("Overview");
+  private readonly TabPage _relationsTab = new("Relations");
+  private readonly TabPage _flowTab = new("Flow");
+  private readonly Panel _relationsHost = new() { Dock = DockStyle.Fill };
+  private readonly Panel _flowHost = new() { Dock = DockStyle.Fill };
+  private readonly System.Windows.Forms.Label _relationsUnavailableLabel = CreateUnavailableLabel("Relations are not available for this selection.");
+  private readonly System.Windows.Forms.Label _flowUnavailableLabel = CreateUnavailableLabel("Control flow is available for methods only.");
   private readonly TextBox _overviewText = CreateReadOnlyTextBox();
   private readonly CallGraphView _callGraphView = new();
   private readonly ControlFlowGraphView _controlFlowGraphView = new();
@@ -56,11 +63,13 @@ public sealed class MainForm : Form
     _mainSplitContainer.Panel1.Controls.Add(_projectExplorer);
 
     _detailsTabs.Dock = DockStyle.Fill;
-    _detailsTabs.TabPages.Add(CreateTabPage("Overview", _overviewText));
-    _detailsTabs.TabPages.Add(CreateTabPage("Class Dependency", _classDependencyView));
-    _detailsTabs.TabPages.Add(CreateTabPage("Project Dependency", _projectDependencyView));
-    _detailsTabs.TabPages.Add(CreateTabPage("Call Graph", _callGraphView));
-    _detailsTabs.TabPages.Add(CreateTabPage("Control Flow", _controlFlowGraphView));
+    _overviewText.Dock = DockStyle.Fill;
+    _overviewTab.Controls.Add(_overviewText);
+    _relationsTab.Controls.Add(_relationsHost);
+    _flowTab.Controls.Add(_flowHost);
+    _detailsTabs.TabPages.Add(_overviewTab);
+    _detailsTabs.TabPages.Add(_relationsTab);
+    _detailsTabs.TabPages.Add(_flowTab);
     _mainSplitContainer.Panel2.Controls.Add(_detailsTabs);
 
     var statusStrip = new StatusStrip();
@@ -272,17 +281,23 @@ public sealed class MainForm : Form
 
   private void ShowNodeDetails(TreeNode? node)
   {
+    var previousTab = _detailsTabs.SelectedTab;
     ClearDetails();
+
+    var relationsAvailable = false;
+    var flowAvailable = false;
 
     switch (node?.Tag)
     {
       case ProjectStructure project:
         ShowProjectOverview(project);
         ShowProjectDependency(project);
+        relationsAvailable = true;
         break;
       case TypeNodeContext typeContext:
         ShowClassOverview(typeContext);
         ShowClassDependency(typeContext);
+        relationsAvailable = true;
         break;
       case FieldNodeContext fieldContext:
         ShowFieldOverview(fieldContext);
@@ -291,8 +306,12 @@ public sealed class MainForm : Form
         ShowMethodOverview(methodContext);
         ShowMethodCalls(methodContext);
         ShowControlFlow(methodContext);
+        relationsAvailable = true;
+        flowAvailable = true;
         break;
     }
+
+    RestoreSelectedTab(previousTab, relationsAvailable, flowAvailable);
   }
 
   private void ShowClassOverview(TypeNodeContext context)
@@ -580,11 +599,13 @@ public sealed class MainForm : Form
             call.CallerMethodSymbolId != context.Method.SymbolId)
         .ToArray();
 
+    ShowRelationsView(_callGraphView);
     _callGraphView.ShowGraph(context.Method, incomingCalls, outgoingCalls);
   }
 
   private void ShowClassDependency(TypeNodeContext context)
   {
+    ShowRelationsView(_classDependencyView);
     _classDependencyView.ShowGraph(
         context.Type,
         context.Project.Types,
@@ -593,11 +614,13 @@ public sealed class MainForm : Form
 
   private void ShowProjectDependency(ProjectStructure project)
   {
+    ShowRelationsView(_projectDependencyView);
     _projectDependencyView.ShowGraph(project);
   }
   private void ShowControlFlow(MethodNodeContext context)
   {
     var controlFlow = context.Project.ControlFlows.FirstOrDefault(flow => flow.MethodId == context.Method.SymbolId);
+    ShowFlowView(_controlFlowGraphView);
     _controlFlowGraphView.ShowGraph(controlFlow);
   }
 
@@ -672,6 +695,54 @@ public sealed class MainForm : Form
     _projectDependencyView.ClearGraph();
     _callGraphView.ClearGraph();
     _controlFlowGraphView.ClearGraph();
+    SetRelationsUnavailable();
+    SetFlowUnavailable();
+  }
+
+  private void ShowRelationsView(Control view)
+  {
+    _relationsHost.Controls.Clear();
+    view.Dock = DockStyle.Fill;
+    _relationsHost.Controls.Add(view);
+  }
+
+  private void SetRelationsUnavailable()
+  {
+    _relationsHost.Controls.Clear();
+    _relationsHost.Controls.Add(_relationsUnavailableLabel);
+  }
+
+  private void ShowFlowView(Control view)
+  {
+    _flowHost.Controls.Clear();
+    view.Dock = DockStyle.Fill;
+    _flowHost.Controls.Add(view);
+  }
+
+  private void SetFlowUnavailable()
+  {
+    _flowHost.Controls.Clear();
+    _flowHost.Controls.Add(_flowUnavailableLabel);
+  }
+
+  private void RestoreSelectedTab(
+      TabPage? previousTab,
+      bool relationsAvailable,
+      bool flowAvailable)
+  {
+    if (previousTab == _relationsTab && relationsAvailable)
+    {
+      _detailsTabs.SelectedTab = _relationsTab;
+      return;
+    }
+
+    if (previousTab == _flowTab && flowAvailable)
+    {
+      _detailsTabs.SelectedTab = _flowTab;
+      return;
+    }
+
+    _detailsTabs.SelectedTab = _overviewTab;
   }
 
   private static TabPage CreateTabPage(string title, Control content)
@@ -682,6 +753,15 @@ public sealed class MainForm : Form
     return page;
   }
 
+  private static System.Windows.Forms.Label CreateUnavailableLabel(string text)
+  {
+    return new System.Windows.Forms.Label
+    {
+      Dock = DockStyle.Fill,
+      Text = text,
+      TextAlign = ContentAlignment.MiddleCenter
+    };
+  }
   private static TextBox CreateReadOnlyTextBox()
   {
     return new TextBox
@@ -767,6 +847,8 @@ public sealed class MainForm : Form
 
   private sealed record MethodNodeContext(ProjectStructure Project, TypeStructure Type, MethodStructure Method);
 }
+
+
 
 
 
