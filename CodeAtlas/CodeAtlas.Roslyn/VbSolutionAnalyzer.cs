@@ -1,7 +1,9 @@
 using CodeAtlas.Roslyn.Models;
 using Microsoft.Build.Locator;
+using Microsoft.Build.Construction;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.MSBuild;
+using System.Runtime.CompilerServices;
 
 namespace CodeAtlas.Roslyn;
 
@@ -36,19 +38,149 @@ public sealed class VbSolutionAnalyzer
 
         EnsureMSBuildRegistered();
 
-        using var workspace = MSBuildWorkspace.Create();
-        var solution = await workspace.OpenSolutionAsync(
-            fullSolutionPath,
-            progress: null,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
-
+        var solutionProjects = ReadSolutionProjects(fullSolutionPath);
         var projects = new List<ProjectStructure>();
-        foreach (var project in solution.Projects.Where(project => project.Language == LanguageNames.VisualBasic))
+        foreach (var solutionProject in solutionProjects)
         {
-            projects.Add(await AnalyzeProjectAsync(project, cancellationToken).ConfigureAwait(false));
+            cancellationToken.ThrowIfCancellationRequested();
+            projects.Add(await AnalyzeProjectFileAsync(solutionProject, cancellationToken).ConfigureAwait(false));
         }
 
         return new SolutionStructure(fullSolutionPath, projects);
+    }
+
+    private async Task<ProjectStructure> AnalyzeProjectFileAsync(
+        SolutionProjectDescriptor solutionProject,
+        CancellationToken cancellationToken)
+    {
+        var monitor = new ProjectLoadMonitor(solutionProject.FilePath);
+
+        using (var workspace = MSBuildWorkspace.Create())
+        {
+            workspace.WorkspaceFailed += (_, args) => monitor.ReportWorkspaceDiagnostic(args.Diagnostic);
+
+            Project? project = null;
+            try
+            {
+                project = await workspace.OpenProjectAsync(
+                    solutionProject.FilePath,
+                    monitor,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                monitor.ReportException("MSBuildLoad", exception);
+            }
+
+            if (project is not null && !monitor.HasFailures)
+            {
+                try
+                {
+                    var analyzedProject = await AnalyzeProjectAsync(project, cancellationToken).ConfigureAwait(false);
+                    return analyzedProject with
+                    {
+                        AnalysisStatus = ProjectAnalysisStatus.Full,
+                        Diagnostics = monitor.GetDiagnostics()
+                    };
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    monitor.ReportException("ProjectAnalysis", exception);
+                }
+            }
+        }
+
+        return await AnalyzeFallbackProjectAsync(
+            solutionProject,
+            monitor.GetDiagnostics(),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<ProjectStructure> AnalyzeFallbackProjectAsync(
+        SolutionProjectDescriptor solutionProject,
+        IReadOnlyList<ProjectAnalysisDiagnostic> loadDiagnostics,
+        CancellationToken cancellationToken)
+    {
+        var diagnostics = new List<ProjectAnalysisDiagnostic>(loadDiagnostics);
+
+        try
+        {
+            var loader = new VbProjectFallbackLoader();
+            using var fallbackProject = await loader.LoadAsync(
+                solutionProject.FilePath,
+                cancellationToken).ConfigureAwait(false);
+            diagnostics.AddRange(fallbackProject.Diagnostics);
+
+            var analyzedProject = await AnalyzeProjectAsync(
+                fallbackProject.Project,
+                cancellationToken).ConfigureAwait(false);
+            return analyzedProject with
+            {
+                Id = solutionProject.Id,
+                Name = solutionProject.Name,
+                FilePath = solutionProject.FilePath,
+                AnalysisStatus = ProjectAnalysisStatus.Partial,
+                Diagnostics = diagnostics.ToArray()
+            };
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            diagnostics.Add(new ProjectAnalysisDiagnostic(
+                ProjectAnalysisDiagnosticSeverity.Error,
+                "FallbackLoad",
+                GetExceptionMessages(exception),
+                solutionProject.FilePath));
+
+            return CreateFailedProject(solutionProject, diagnostics);
+        }
+    }
+
+    private static ProjectStructure CreateFailedProject(
+        SolutionProjectDescriptor solutionProject,
+        IReadOnlyList<ProjectAnalysisDiagnostic> diagnostics)
+    {
+        return new ProjectStructure(
+            solutionProject.Id,
+            solutionProject.Name,
+            solutionProject.FilePath,
+            LanguageNames.VisualBasic,
+            Array.Empty<TypeStructure>(),
+            Array.Empty<CallRelation>(),
+            Array.Empty<FieldUsageRelation>(),
+            Array.Empty<TypeDependencyRelation>(),
+            Array.Empty<ControlFlowInfo>())
+        {
+            AnalysisStatus = ProjectAnalysisStatus.Failed,
+            Diagnostics = diagnostics
+        };
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static IReadOnlyList<SolutionProjectDescriptor> ReadSolutionProjects(string solutionFilePath)
+    {
+        return SolutionFile.Parse(solutionFilePath)
+            .ProjectsInOrder
+            .Where(project => string.Equals(
+                Path.GetExtension(project.AbsolutePath),
+                ".vbproj",
+                StringComparison.OrdinalIgnoreCase))
+            .Select(project => new SolutionProjectDescriptor(
+                project.ProjectGuid,
+                project.ProjectName,
+                Path.GetFullPath(project.AbsolutePath)))
+            .ToArray();
     }
 
     private async Task<ProjectStructure> AnalyzeProjectAsync(
@@ -272,5 +404,92 @@ public sealed class VbSolutionAnalyzer
         return Version.TryParse(value, out var version)
             ? version
             : null;
+    }
+
+    private static string GetExceptionMessages(Exception exception)
+    {
+        var messages = new List<string>();
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (!string.IsNullOrWhiteSpace(current.Message))
+            {
+                messages.Add(current.Message);
+            }
+        }
+
+        return string.Join(" -> ", messages.Distinct(StringComparer.Ordinal));
+    }
+
+    private sealed record SolutionProjectDescriptor(string Id, string Name, string FilePath);
+
+    private sealed class ProjectLoadMonitor(string projectFilePath) : IProgress<ProjectLoadProgress>
+    {
+        private readonly object _syncRoot = new();
+        private readonly List<ProjectAnalysisDiagnostic> _diagnostics = new();
+        private string _stage = "MSBuildLoad";
+        private string _currentProjectFilePath = projectFilePath;
+        private bool _hasFailures;
+
+        public bool HasFailures
+        {
+            get
+            {
+                lock (_syncRoot)
+                {
+                    return _hasFailures;
+                }
+            }
+        }
+
+        public void Report(ProjectLoadProgress value)
+        {
+            lock (_syncRoot)
+            {
+                _stage = value.Operation.ToString();
+                if (!string.IsNullOrWhiteSpace(value.FilePath))
+                {
+                    _currentProjectFilePath = value.FilePath;
+                }
+            }
+        }
+
+        public void ReportWorkspaceDiagnostic(WorkspaceDiagnostic diagnostic)
+        {
+            lock (_syncRoot)
+            {
+                var severity = diagnostic.Kind == WorkspaceDiagnosticKind.Failure
+                    ? ProjectAnalysisDiagnosticSeverity.Error
+                    : ProjectAnalysisDiagnosticSeverity.Warning;
+                _hasFailures |= severity == ProjectAnalysisDiagnosticSeverity.Error;
+                _diagnostics.Add(new ProjectAnalysisDiagnostic(
+                    severity,
+                    _stage,
+                    diagnostic.Message,
+                    _currentProjectFilePath));
+            }
+        }
+
+        public void ReportException(string stage, Exception exception)
+        {
+            lock (_syncRoot)
+            {
+                _hasFailures = true;
+                _diagnostics.Add(new ProjectAnalysisDiagnostic(
+                    ProjectAnalysisDiagnosticSeverity.Error,
+                    stage,
+                    GetExceptionMessages(exception),
+                    _currentProjectFilePath));
+            }
+        }
+
+        public IReadOnlyList<ProjectAnalysisDiagnostic> GetDiagnostics()
+        {
+            lock (_syncRoot)
+            {
+                return _diagnostics
+                    .Distinct()
+                    .ToArray();
+            }
+        }
     }
 }

@@ -151,7 +151,11 @@ public sealed class MainForm : Form
       var analyzer = new VbSolutionAnalyzer();
       _solution = await analyzer.AnalyzeAsync(dialog.FileName);
       PopulateProjectExplorer(_solution);
-      _statusLabel.Text = $"Loaded {_solution.Projects.Count} project(s)";
+      var partialProjects = _solution.Projects.Count(project => project.AnalysisStatus == ProjectAnalysisStatus.Partial);
+      var failedProjects = _solution.Projects.Count(project => project.AnalysisStatus == ProjectAnalysisStatus.Failed);
+      _statusLabel.Text = partialProjects == 0 && failedProjects == 0
+          ? $"Loaded {_solution.Projects.Count} project(s)"
+          : $"Loaded {_solution.Projects.Count} project(s): {partialProjects} partial, {failedProjects} failed";
     }
     catch (Exception exception)
     {
@@ -419,6 +423,7 @@ public sealed class MainForm : Form
         {
             "Project",
             $"Name                   {project.Name}",
+            $"Analysis Status        {project.AnalysisStatus}",
             string.Empty,
             "Structure",
             $"Types                  {types.Count}",
@@ -444,6 +449,18 @@ public sealed class MainForm : Form
             string.Empty,
             "Types"
         };
+
+    if (project.Diagnostics.Count > 0)
+    {
+      lines.InsertRange(
+          3,
+          new[]
+          {
+              string.Empty,
+              "Diagnostics"
+          }.Concat(project.Diagnostics.Select(diagnostic =>
+              $"[{diagnostic.Severity}] {diagnostic.Stage}: {diagnostic.Message}")));
+    }
 
     foreach (var type in types.OrderBy(type => type.FullName, StringComparer.Ordinal))
     {

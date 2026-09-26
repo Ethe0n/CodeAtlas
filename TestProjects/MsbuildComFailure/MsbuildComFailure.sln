@@ -1,0 +1,27 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 14
+VisualStudioVersion = 14.0.25420.1
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{F184B08F-C81C-45F6-A57F-5ABD9991F28F}") = "FakeCatiaTypes", "FakeCatiaTypes\FakeCatiaTypes.vbproj", "{727A882C-E6E2-4455-9AF2-9D79AB388D63}"
+EndProject
+Project("{F184B08F-C81C-45F6-A57F-5ABD9991F28F}") = "LegacyCatiaAutomation", "LegacyCatiaAutomation\LegacyCatiaAutomation.vbproj", "{A8F1C843-7E5F-4741-AFB6-6D55AE5B334B}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{727A882C-E6E2-4455-9AF2-9D79AB388D63}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{727A882C-E6E2-4455-9AF2-9D79AB388D63}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{727A882C-E6E2-4455-9AF2-9D79AB388D63}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{727A882C-E6E2-4455-9AF2-9D79AB388D63}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A8F1C843-7E5F-4741-AFB6-6D55AE5B334B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A8F1C843-7E5F-4741-AFB6-6D55AE5B334B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A8F1C843-7E5F-4741-AFB6-6D55AE5B334B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A8F1C843-7E5F-4741-AFB6-6D55AE5B334B}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

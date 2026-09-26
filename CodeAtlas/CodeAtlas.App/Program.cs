@@ -33,6 +33,12 @@ Console.WriteLine($"Solution: {structure.FilePath}");
 foreach (var project in structure.Projects)
 {
     Console.WriteLine($"Project: {project.Name}");
+    Console.WriteLine($"  Analysis Status: {project.AnalysisStatus}");
+
+    foreach (var diagnostic in project.Diagnostics)
+    {
+        Console.WriteLine($"  Diagnostic: [{diagnostic.Severity}] {diagnostic.Stage} - {diagnostic.Message}");
+    }
 
     foreach (var type in project.Types)
     {
