@@ -10,6 +10,7 @@ public sealed class ControlFlowGraphView : UserControl
   private const bool ShowBlockIds = false;
 
   private readonly GViewer _viewer = new();
+  private readonly ControlFlowPresentationBuilder _presentationBuilder = new();
   private readonly System.Windows.Forms.Label _emptyLabel = new()
   {
     Dock = DockStyle.Fill,
@@ -32,17 +33,17 @@ public sealed class ControlFlowGraphView : UserControl
 
   private static void ApplyLayoutConstraints(
     Graph graph,
-    ControlFlowInfo controlFlow)
+    ControlFlowPresentation presentation)
   {
-    foreach (var edge in controlFlow.Edges)
+    foreach (var edge in presentation.Edges)
     {
       if (IsBackEdge(edge))
       {
         continue;
       }
 
-      var source = graph.FindNode(GetNodeId(edge.From));
-      var target = graph.FindNode(GetNodeId(edge.To));
+      var source = graph.FindNode(edge.From);
+      var target = graph.FindNode(edge.To);
 
       if (source is null || target is null)
       {
@@ -52,30 +53,30 @@ public sealed class ControlFlowGraphView : UserControl
       graph.LayerConstraints.AddUpDownConstraint(source, target);
     }
 
-    var entry = controlFlow.Nodes
+    var entry = presentation.Nodes
         .FirstOrDefault(n => n.Kind == "Entry");
 
-    var exit = controlFlow.Nodes
+    var exit = presentation.Nodes
         .FirstOrDefault(n => n.Kind == "Exit");
 
     var entryNode = entry is null
         ? null
-        : graph.FindNode(GetNodeId(entry.Id));
+        : graph.FindNode(entry.Id);
 
     var exitNode = exit is null
         ? null
-        : graph.FindNode(GetNodeId(exit.Id));
+        : graph.FindNode(exit.Id);
 
     if (entryNode is not null)
     {
-      foreach (var node in controlFlow.Nodes)
+      foreach (var node in presentation.Nodes)
       {
         if (node.Id == entry!.Id)
         {
           continue;
         }
 
-        var target = graph.FindNode(GetNodeId(node.Id));
+        var target = graph.FindNode(node.Id);
 
         if (target is not null)
         {
@@ -86,14 +87,14 @@ public sealed class ControlFlowGraphView : UserControl
 
     if (exitNode is not null)
     {
-      foreach (var node in controlFlow.Nodes)
+      foreach (var node in presentation.Nodes)
       {
         if (node.Id == exit!.Id)
         {
           continue;
         }
 
-        var source = graph.FindNode(GetNodeId(node.Id));
+        var source = graph.FindNode(node.Id);
 
         if (source is not null)
         {
@@ -111,28 +112,29 @@ public sealed class ControlFlowGraphView : UserControl
       return;
     }
 
-    var graph = new Graph(controlFlow.MethodName)
+    var presentation = _presentationBuilder.Build(controlFlow);
+    var graph = new Graph(presentation.MethodName)
     {
       Directed = true
     };
     ConfigureGraphLayout(graph);
 
-    foreach (var node in controlFlow.Nodes)
+    foreach (var node in presentation.Nodes)
     {
-      var graphNode = graph.AddNode(GetNodeId(node.Id));
+      var graphNode = graph.AddNode(node.Id);
       ConfigureNode(graphNode, node);
     }
 
-    foreach (var edge in controlFlow.Edges)
+    foreach (var edge in presentation.Edges)
     {
       var graphEdge = graph.AddEdge(
-          GetNodeId(edge.From),
+          edge.From,
           FormatEdgeLabel(edge),
-          GetNodeId(edge.To));
+          edge.To);
       ConfigureEdge(graphEdge, edge);
     }
 
-    ApplyLayoutConstraints(graph, controlFlow);
+    ApplyLayoutConstraints(graph, presentation);
 
     _viewer.Graph = graph;
     _viewer.Visible = true;
@@ -177,7 +179,7 @@ public sealed class ControlFlowGraphView : UserControl
     };
   }
 
-  private static void ConfigureNode(Node graphNode, ControlFlowNode node)
+  private static void ConfigureNode(Node graphNode, ControlFlowPresentationNode node)
   {
     graphNode.LabelText = FormatNodeLabel(node);
     graphNode.Attr.Shape = node.Kind switch
@@ -204,7 +206,7 @@ public sealed class ControlFlowGraphView : UserControl
     };
   }
 
-  private static void ConfigureEdge(Edge graphEdge, ControlFlowEdge edge)
+  private static void ConfigureEdge(Edge graphEdge, ControlFlowPresentationEdge edge)
   {
     graphEdge.Attr.ArrowheadAtTarget = ArrowStyle.Normal;
     graphEdge.Attr.LineWidth = edge.Kind is "ConditionalTrue" or "ConditionalFalse" ? 1.4 : 1;
@@ -222,35 +224,25 @@ public sealed class ControlFlowGraphView : UserControl
     }
   }
 
-  private static string GetNodeId(int id)
-  {
-    return $"block_{id}";
-  }
-
-  private static string FormatNodeLabel(ControlFlowNode node)
+  private static string FormatNodeLabel(ControlFlowPresentationNode node)
   {
     if (node.Kind is "Entry" or "Exit")
     {
       return ShowBlockIds
-          ? $"{node.Kind}{Environment.NewLine}Block {node.Id}"
+          ? $"{node.Kind}{Environment.NewLine}{FormatBlockId(node)}"
           : node.Kind;
     }
 
-    var body = node.Text
-        .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)
-        .Select(line => line.StartsWith("Condition: ", StringComparison.Ordinal)
-            ? line["Condition: ".Length..]
-            : line)
-        .ToArray();
+    var body = node.Text;
 
-    return body.Length == 0
+    return string.IsNullOrWhiteSpace(body)
         ? FormatBlockId(node)
         : ShowBlockIds
-            ? $"{string.Join(Environment.NewLine, body)}{Environment.NewLine}{FormatBlockId(node)}"
-            : string.Join(Environment.NewLine, body);
+            ? $"{body}{Environment.NewLine}{FormatBlockId(node)}"
+            : body;
   }
 
-  private static string FormatEdgeLabel(ControlFlowEdge edge)
+  private static string FormatEdgeLabel(ControlFlowPresentationEdge edge)
   {
     return edge.Kind switch
     {
@@ -260,20 +252,20 @@ public sealed class ControlFlowGraphView : UserControl
     };
   }
 
-  private static bool IsConditionNode(ControlFlowNode node)
+  private static bool IsConditionNode(ControlFlowPresentationNode node)
   {
-    return node.Text
-        .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)
-        .Any(line => line.StartsWith("Condition: ", StringComparison.Ordinal));
+    return node.Kind == "Condition";
   }
 
-  private static bool IsBackEdge(ControlFlowEdge edge)
+  private static bool IsBackEdge(ControlFlowPresentationEdge edge)
   {
-    return edge.To <= edge.From;
+    return edge.IsBackEdge;
   }
 
-  private static string FormatBlockId(ControlFlowNode node)
+  private static string FormatBlockId(ControlFlowPresentationNode node)
   {
-    return $"Block {node.Id}";
+    return node.SegmentIndex == 0
+        ? $"Block {node.SourceBlockId}"
+        : $"Block {node.SourceBlockId}.{node.SegmentIndex + 1}";
   }
 }

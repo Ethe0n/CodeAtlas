@@ -27,14 +27,21 @@
   End Sub
 
   Public Function TestFlow(value As Integer) As Integer
+    Dim threshold As Integer = 10
+    Dim multiplier As Integer = 2
+    Dim increment As Integer = 1
+    Dim loopStart As Integer = 0
+    Dim loopEnd As Integer = 2
+    Dim normalizedValue As Integer = value
+    value = normalizedValue
 
-    If value > 10 Then
-      value = value * 2
+    If value > threshold Then
+      value = value * multiplier
     Else
-      value = value + 1
+      value = value + increment
     End If
 
-    For i As Integer = 0 To 2
+    For i As Integer = loopStart To loopEnd
       value += i
     Next
 
