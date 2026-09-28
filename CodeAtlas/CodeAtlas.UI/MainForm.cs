@@ -19,10 +19,19 @@ public sealed class MainForm : Form
   private readonly ControlFlowGraphView _controlFlowGraphView = new();
   private readonly ClassDependencyView _classDependencyView = new();
   private readonly ProjectDependencyView _projectDependencyView = new();
-  private readonly ToolStripStatusLabel _statusLabel = new("Ready");
+  private readonly ToolStripStatusLabel _statusLabel = new("Ready") { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
+  private readonly ToolStripProgressBar _analysisProgressBar = new()
+  {
+    AutoSize = false,
+    Width = 180,
+    Visible = false
+  };
+  private readonly ToolStripButton _cancelAnalysisButton = new("Cancel") { Visible = false };
+  private readonly ToolStripMenuItem _openSolutionMenuItem = new("&Open Solution...");
   private readonly SplitContainer _mainSplitContainer = new();
 
   private SolutionStructure? _solution;
+  private CancellationTokenSource? _analysisCancellation;
   private bool _initialSplitterDistanceApplied;
 
   public MainForm()
@@ -33,6 +42,8 @@ public sealed class MainForm : Form
     MinimumSize = new Size(900, 600);
 
     BuildLayout();
+    _openSolutionMenuItem.Click += async (_, _) => await OpenSolutionAsync();
+    _cancelAnalysisButton.Click += (_, _) => CancelAnalysis();
     _callGraphView.MethodSelected += SelectMethodNodeBySymbolId;
     _classDependencyView.TypeSelected += SelectTypeNodeBySymbolId;
     _projectDependencyView.TypeSelected += SelectTypeNodeBySymbolId;
@@ -49,8 +60,7 @@ public sealed class MainForm : Form
   {
     var menuStrip = new MenuStrip();
     var fileMenu = new ToolStripMenuItem("&File");
-    var openSolutionMenuItem = new ToolStripMenuItem("&Open Solution...", null, async (_, _) => await OpenSolutionAsync());
-    fileMenu.DropDownItems.Add(openSolutionMenuItem);
+    fileMenu.DropDownItems.Add(_openSolutionMenuItem);
     menuStrip.Items.Add(fileMenu);
     MainMenuStrip = menuStrip;
 
@@ -74,6 +84,8 @@ public sealed class MainForm : Form
 
     var statusStrip = new StatusStrip();
     statusStrip.Items.Add(_statusLabel);
+    statusStrip.Items.Add(_analysisProgressBar);
+    statusStrip.Items.Add(_cancelAnalysisButton);
 
     Controls.Add(_mainSplitContainer);
     Controls.Add(statusStrip);
@@ -141,21 +153,26 @@ public sealed class MainForm : Form
       return;
     }
 
-    UseWaitCursor = true;
-    _projectExplorer.Enabled = false;
-    _statusLabel.Text = "Analyzing solution...";
+    using var cancellation = new CancellationTokenSource();
+    _analysisCancellation = cancellation;
+    BeginAnalysisUi();
     ClearDetails();
 
     try
     {
       var analyzer = new VbSolutionAnalyzer();
-      _solution = await analyzer.AnalyzeAsync(dialog.FileName);
+      var progress = new Progress<SolutionAnalysisProgress>(UpdateAnalysisProgress);
+      _solution = await analyzer.AnalyzeAsync(dialog.FileName, cancellation.Token, progress);
       PopulateProjectExplorer(_solution);
       var partialProjects = _solution.Projects.Count(project => project.AnalysisStatus == ProjectAnalysisStatus.Partial);
       var failedProjects = _solution.Projects.Count(project => project.AnalysisStatus == ProjectAnalysisStatus.Failed);
       _statusLabel.Text = partialProjects == 0 && failedProjects == 0
           ? $"Loaded {_solution.Projects.Count} project(s)"
           : $"Loaded {_solution.Projects.Count} project(s): {partialProjects} partial, {failedProjects} failed";
+    }
+    catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+    {
+      _statusLabel.Text = "Analysis canceled";
     }
     catch (Exception exception)
     {
@@ -164,9 +181,99 @@ public sealed class MainForm : Form
     }
     finally
     {
-      _projectExplorer.Enabled = true;
-      UseWaitCursor = false;
+      if (ReferenceEquals(_analysisCancellation, cancellation))
+      {
+        _analysisCancellation = null;
+      }
+
+      EndAnalysisUi();
     }
+  }
+
+  private void BeginAnalysisUi()
+  {
+    UseWaitCursor = true;
+    _projectExplorer.Enabled = false;
+    _openSolutionMenuItem.Enabled = false;
+    _statusLabel.Text = "Reading solution...";
+    _analysisProgressBar.Style = ProgressBarStyle.Marquee;
+    _analysisProgressBar.MarqueeAnimationSpeed = 30;
+    _analysisProgressBar.Visible = true;
+    _cancelAnalysisButton.Enabled = true;
+    _cancelAnalysisButton.Visible = true;
+  }
+
+  private void EndAnalysisUi()
+  {
+    _projectExplorer.Enabled = true;
+    _openSolutionMenuItem.Enabled = true;
+    _analysisProgressBar.Visible = false;
+    _cancelAnalysisButton.Visible = false;
+    UseWaitCursor = false;
+  }
+
+  private void CancelAnalysis()
+  {
+    if (_analysisCancellation is null || _analysisCancellation.IsCancellationRequested)
+    {
+      return;
+    }
+
+    _cancelAnalysisButton.Enabled = false;
+    _statusLabel.Text = "Canceling analysis...";
+    _analysisCancellation.Cancel();
+  }
+
+  private void UpdateAnalysisProgress(SolutionAnalysisProgress progress)
+  {
+    if (_analysisCancellation is null || _analysisCancellation.IsCancellationRequested)
+    {
+      return;
+    }
+
+    if (progress.Stage == SolutionAnalysisStage.DiscoveringProjects)
+    {
+      _analysisProgressBar.Style = ProgressBarStyle.Marquee;
+      _statusLabel.Text = "Reading solution...";
+      return;
+    }
+
+    _analysisProgressBar.Style = ProgressBarStyle.Blocks;
+    _analysisProgressBar.MarqueeAnimationSpeed = 0;
+    _analysisProgressBar.Minimum = 0;
+    _analysisProgressBar.Maximum = Math.Max(1, progress.TotalProjects);
+    _analysisProgressBar.Value = Math.Clamp(
+        progress.CompletedProjects,
+        _analysisProgressBar.Minimum,
+        _analysisProgressBar.Maximum);
+
+    var projectPosition = Math.Min(progress.CompletedProjects + 1, progress.TotalProjects);
+    var projectPrefix = $"Project {projectPosition}/{progress.TotalProjects}: {progress.CurrentProjectName}";
+    _statusLabel.Text = progress.Stage switch
+    {
+      SolutionAnalysisStage.LoadingProject => $"{projectPrefix} - loading with MSBuild",
+      SolutionAnalysisStage.CompilingProject => $"{projectPrefix} - creating compilation",
+      SolutionAnalysisStage.LoadingFallback => $"{projectPrefix} - loading with fallback",
+      SolutionAnalysisStage.AnalyzingDocuments => FormatDocumentProgress(projectPrefix, progress),
+      SolutionAnalysisStage.ProjectCompleted =>
+          $"Analyzed {progress.CompletedProjects}/{progress.TotalProjects} project(s) ({progress.ProjectStatus})",
+      _ => "Analyzing solution..."
+    };
+  }
+
+  private static string FormatDocumentProgress(
+      string projectPrefix,
+      SolutionAnalysisProgress progress)
+  {
+    if (progress.TotalDocuments == 0)
+    {
+      return $"{projectPrefix} - no VB documents";
+    }
+
+    var documentName = string.IsNullOrWhiteSpace(progress.CurrentDocumentName)
+        ? string.Empty
+        : $": {progress.CurrentDocumentName}";
+    return $"{projectPrefix} - analyzing document {progress.CurrentDocument}/{progress.TotalDocuments}{documentName}";
   }
 
   private void PopulateProjectExplorer(SolutionStructure solution)

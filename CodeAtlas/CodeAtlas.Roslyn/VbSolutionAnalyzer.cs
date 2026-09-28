@@ -23,7 +23,8 @@ public sealed class VbSolutionAnalyzer
 
     public async Task<SolutionStructure> AnalyzeAsync(
         string solutionFilePath,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IProgress<SolutionAnalysisProgress>? progress = null)
     {
         if (string.IsNullOrWhiteSpace(solutionFilePath))
         {
@@ -38,12 +39,32 @@ public sealed class VbSolutionAnalyzer
 
         EnsureMSBuildRegistered();
 
+        progress?.Report(new SolutionAnalysisProgress(
+            0,
+            0,
+            null,
+            SolutionAnalysisStage.DiscoveringProjects));
+
         var solutionProjects = ReadSolutionProjects(fullSolutionPath);
         var projects = new List<ProjectStructure>();
-        foreach (var solutionProject in solutionProjects)
+        for (var projectIndex = 0; projectIndex < solutionProjects.Count; projectIndex++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            projects.Add(await AnalyzeProjectFileAsync(solutionProject, cancellationToken).ConfigureAwait(false));
+            var solutionProject = solutionProjects[projectIndex];
+            var analyzedProject = await AnalyzeProjectFileAsync(
+                solutionProject,
+                solutionProjects.Count,
+                projectIndex,
+                progress,
+                cancellationToken).ConfigureAwait(false);
+            projects.Add(analyzedProject);
+            ReportProgress(
+                progress,
+                solutionProjects.Count,
+                projectIndex + 1,
+                solutionProject.Name,
+                SolutionAnalysisStage.ProjectCompleted,
+                projectStatus: analyzedProject.AnalysisStatus);
         }
 
         return new SolutionStructure(fullSolutionPath, projects);
@@ -51,8 +72,18 @@ public sealed class VbSolutionAnalyzer
 
     private async Task<ProjectStructure> AnalyzeProjectFileAsync(
         SolutionProjectDescriptor solutionProject,
+        int totalProjects,
+        int completedProjects,
+        IProgress<SolutionAnalysisProgress>? progress,
         CancellationToken cancellationToken)
     {
+        ReportProgress(
+            progress,
+            totalProjects,
+            completedProjects,
+            solutionProject.Name,
+            SolutionAnalysisStage.LoadingProject);
+
         var monitor = new ProjectLoadMonitor(solutionProject.FilePath);
 
         using (var workspace = MSBuildWorkspace.Create())
@@ -80,7 +111,13 @@ public sealed class VbSolutionAnalyzer
             {
                 try
                 {
-                    var analyzedProject = await AnalyzeProjectAsync(project, cancellationToken).ConfigureAwait(false);
+                    var analyzedProject = await AnalyzeProjectAsync(
+                        project,
+                        solutionProject.Name,
+                        totalProjects,
+                        completedProjects,
+                        progress,
+                        cancellationToken).ConfigureAwait(false);
                     return analyzedProject with
                     {
                         AnalysisStatus = ProjectAnalysisStatus.Full,
@@ -101,18 +138,31 @@ public sealed class VbSolutionAnalyzer
         return await AnalyzeFallbackProjectAsync(
             solutionProject,
             monitor.GetDiagnostics(),
+            totalProjects,
+            completedProjects,
+            progress,
             cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<ProjectStructure> AnalyzeFallbackProjectAsync(
         SolutionProjectDescriptor solutionProject,
         IReadOnlyList<ProjectAnalysisDiagnostic> loadDiagnostics,
+        int totalProjects,
+        int completedProjects,
+        IProgress<SolutionAnalysisProgress>? progress,
         CancellationToken cancellationToken)
     {
         var diagnostics = new List<ProjectAnalysisDiagnostic>(loadDiagnostics);
 
         try
         {
+            ReportProgress(
+                progress,
+                totalProjects,
+                completedProjects,
+                solutionProject.Name,
+                SolutionAnalysisStage.LoadingFallback);
+
             var loader = new VbProjectFallbackLoader();
             using var fallbackProject = await loader.LoadAsync(
                 solutionProject.FilePath,
@@ -121,6 +171,10 @@ public sealed class VbSolutionAnalyzer
 
             var analyzedProject = await AnalyzeProjectAsync(
                 fallbackProject.Project,
+                solutionProject.Name,
+                totalProjects,
+                completedProjects,
+                progress,
                 cancellationToken).ConfigureAwait(false);
             return analyzedProject with
             {
@@ -185,8 +239,19 @@ public sealed class VbSolutionAnalyzer
 
     private async Task<ProjectStructure> AnalyzeProjectAsync(
         Project project,
+        string projectName,
+        int totalProjects,
+        int completedProjects,
+        IProgress<SolutionAnalysisProgress>? progress,
         CancellationToken cancellationToken)
     {
+        ReportProgress(
+            progress,
+            totalProjects,
+            completedProjects,
+            projectName,
+            SolutionAnalysisStage.CompilingProject);
+
         var compilation = await project.GetCompilationAsync(cancellationToken).ConfigureAwait(false);
         if (compilation is null)
         {
@@ -211,25 +276,53 @@ public sealed class VbSolutionAnalyzer
             ? null
             : Path.GetDirectoryName(project.FilePath);
 
-        foreach (var document in project.Documents.Where(IsVisualBasicDocument))
+        var documents = project.Documents
+            .Where(IsVisualBasicDocument)
+            .ToArray();
+
+        ReportProgress(
+            progress,
+            totalProjects,
+            completedProjects,
+            projectName,
+            SolutionAnalysisStage.AnalyzingDocuments,
+            totalDocuments: documents.Length);
+
+        for (var documentIndex = 0; documentIndex < documents.Length; documentIndex++)
         {
-            var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-            if (root is null)
+            var document = documents[documentIndex];
+            try
             {
-                continue;
-            }
+                var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+                if (root is null)
+                {
+                    continue;
+                }
 
-            var semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
-            if (semanticModel is null)
+                var semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
+                if (semanticModel is null)
+                {
+                    continue;
+                }
+
+                types.AddRange(_structureExtractor.ExtractTypes(root, semanticModel, document.FilePath, projectDirectory));
+                calls.AddRange(_structureExtractor.ExtractCalls(root, semanticModel, compilation, document.FilePath, projectDirectory));
+                fieldUsages.AddRange(_structureExtractor.ExtractFieldUsages(root, semanticModel, document.FilePath, projectDirectory));
+                typeDependencies.AddRange(_structureExtractor.ExtractTypeDependencies(root, semanticModel, document.FilePath, projectDirectory));
+                controlFlows.AddRange(_structureExtractor.ExtractControlFlows(root, semanticModel, document.FilePath));
+            }
+            finally
             {
-                continue;
+                ReportProgress(
+                    progress,
+                    totalProjects,
+                    completedProjects,
+                    projectName,
+                    SolutionAnalysisStage.AnalyzingDocuments,
+                    documentIndex + 1,
+                    documents.Length,
+                    document.Name);
             }
-
-            types.AddRange(_structureExtractor.ExtractTypes(root, semanticModel, document.FilePath, projectDirectory));
-            calls.AddRange(_structureExtractor.ExtractCalls(root, semanticModel, compilation, document.FilePath, projectDirectory));
-            fieldUsages.AddRange(_structureExtractor.ExtractFieldUsages(root, semanticModel, document.FilePath, projectDirectory));
-            typeDependencies.AddRange(_structureExtractor.ExtractTypeDependencies(root, semanticModel, document.FilePath, projectDirectory));
-            controlFlows.AddRange(_structureExtractor.ExtractControlFlows(root, semanticModel, document.FilePath));
         }
 
         var mergedTypes = MergePartialTypes(types);
@@ -418,6 +511,28 @@ public sealed class VbSolutionAnalyzer
         }
 
         return string.Join(" -> ", messages.Distinct(StringComparer.Ordinal));
+    }
+
+    private static void ReportProgress(
+        IProgress<SolutionAnalysisProgress>? progress,
+        int totalProjects,
+        int completedProjects,
+        string? projectName,
+        SolutionAnalysisStage stage,
+        int currentDocument = 0,
+        int totalDocuments = 0,
+        string? currentDocumentName = null,
+        ProjectAnalysisStatus? projectStatus = null)
+    {
+        progress?.Report(new SolutionAnalysisProgress(
+            totalProjects,
+            completedProjects,
+            projectName,
+            stage,
+            currentDocument,
+            totalDocuments,
+            currentDocumentName,
+            projectStatus));
     }
 
     private sealed record SolutionProjectDescriptor(string Id, string Name, string FilePath);
