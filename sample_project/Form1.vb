@@ -33,7 +33,11 @@
     Dim loopStart As Integer = 0
     Dim loopEnd As Integer = 2
     Dim normalizedValue As Integer = value
-    value = normalizedValue
+    Dim adjustment As Integer = 0
+    Dim lowerLimit As Integer = 0
+    Dim upperLimit As Integer = 100
+    Dim adjustedValue As Integer = normalizedValue + adjustment
+    value = Math.Min(Math.Max(adjustedValue, lowerLimit), upperLimit)
 
     If value > threshold Then
       value = value * multiplier

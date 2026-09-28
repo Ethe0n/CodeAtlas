@@ -4,7 +4,7 @@ namespace CodeAtlas.UI;
 
 internal sealed class ControlFlowPresentationBuilder
 {
-  private const int MaxStatementsPerNode = 4;
+  private const int MaxOperationsPerNode = 3;
 
   public ControlFlowPresentation Build(ControlFlowInfo controlFlow)
   {
@@ -61,31 +61,42 @@ internal sealed class ControlFlowPresentationBuilder
       ];
     }
 
-    var lines = SplitLines(rawNode.Text);
-    var conditionLine = lines.LastOrDefault(line =>
-        line.StartsWith("Condition: ", StringComparison.Ordinal));
-    var statementLines = lines
-        .Where(line => !line.StartsWith("Condition: ", StringComparison.Ordinal))
+    var operationTexts = SplitOperationTexts(rawNode.Text);
+    var conditionText = operationTexts.LastOrDefault(IsConditionOperation);
+    var returnText = conditionText is null
+        ? operationTexts.LastOrDefault(IsReturnOperation)
+        : null;
+    var bodyOperations = operationTexts
+        .Where(operation => !IsConditionOperation(operation) && !IsReturnOperation(operation))
         .ToArray();
     var nodes = new List<ControlFlowPresentationNode>();
     var segmentIndex = 0;
 
-    foreach (var statementChunk in statementLines.Chunk(MaxStatementsPerNode))
+    foreach (var operationChunk in bodyOperations.Chunk(MaxOperationsPerNode))
     {
       nodes.Add(CreateNode(
           rawNode,
           segmentIndex++,
           "Block",
-          string.Join(Environment.NewLine, statementChunk)));
+          string.Join(Environment.NewLine, operationChunk)));
     }
 
-    if (conditionLine is not null)
+    if (conditionText is not null)
     {
       nodes.Add(CreateNode(
           rawNode,
-          segmentIndex,
+          segmentIndex++,
           "Condition",
-          conditionLine["Condition: ".Length..]));
+          conditionText["Condition: ".Length..]));
+    }
+
+    if (returnText is not null)
+    {
+      nodes.Add(CreateNode(
+          rawNode,
+          segmentIndex++,
+          "Return",
+          returnText));
     }
 
     if (nodes.Count == 0)
@@ -110,11 +121,23 @@ internal sealed class ControlFlowPresentationBuilder
         text);
   }
 
-  private static string[] SplitLines(string text)
+  private static string[] SplitOperationTexts(string text)
   {
+    // ControlFlowAnalyzer emits one normalized line per top-level operation.
     return text.Split(
         ['\r', '\n'],
         StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+  }
+
+  private static bool IsConditionOperation(string text)
+  {
+    return text.StartsWith("Condition: ", StringComparison.Ordinal);
+  }
+
+  private static bool IsReturnOperation(string text)
+  {
+    return text.Equals("Return", StringComparison.Ordinal) ||
+        text.StartsWith("Return ", StringComparison.Ordinal);
   }
 }
 
