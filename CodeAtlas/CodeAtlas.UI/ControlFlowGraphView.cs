@@ -210,18 +210,23 @@ public sealed class ControlFlowGraphView : UserControl
   {
     graphEdge.Attr.ArrowheadAtTarget = ArrowStyle.Normal;
     graphEdge.Attr.LineWidth = edge.Kind is "ConditionalTrue" or "ConditionalFalse" ? 1.4 : 1;
-    graphEdge.Attr.Color = edge.Kind switch
+    graphEdge.Attr.Color = GetEdgeColor(edge.Kind);
+
+    if (IsBackEdge(edge))
+    {
+      graphEdge.Attr.LineWidth = 1.6;
+      graphEdge.Attr.AddStyle(Style.Dashed);
+    }
+  }
+
+  private static Microsoft.Msagl.Drawing.Color GetEdgeColor(string edgeKind)
+  {
+    return edgeKind switch
     {
       "ConditionalTrue" => Microsoft.Msagl.Drawing.Color.ForestGreen,
       "ConditionalFalse" => Microsoft.Msagl.Drawing.Color.Firebrick,
       _ => Microsoft.Msagl.Drawing.Color.DimGray
     };
-
-    if (IsBackEdge(edge))
-    {
-      graphEdge.Attr.Color = Microsoft.Msagl.Drawing.Color.SteelBlue;
-      graphEdge.Attr.LineWidth = 1.6;
-    }
   }
 
   private static string FormatNodeLabel(ControlFlowPresentationNode node)
