@@ -208,9 +208,17 @@ public sealed class ControlFlowGraphView : UserControl
 
   private static void ConfigureEdge(Edge graphEdge, ControlFlowPresentationEdge edge)
   {
+    var edgeColor = GetEdgeColor(edge.Kind);
+
     graphEdge.Attr.ArrowheadAtTarget = ArrowStyle.Normal;
     graphEdge.Attr.LineWidth = edge.Kind is "ConditionalTrue" or "ConditionalFalse" ? 1.4 : 1;
-    graphEdge.Attr.Color = GetEdgeColor(edge.Kind);
+    graphEdge.Attr.Color = edgeColor;
+
+    if (graphEdge.Label is not null &&
+        edge.Kind is "ConditionalTrue" or "ConditionalFalse")
+    {
+      graphEdge.Label.FontColor = edgeColor;
+    }
 
     if (IsBackEdge(edge))
     {
