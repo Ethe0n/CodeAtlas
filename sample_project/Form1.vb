@@ -53,4 +53,10 @@
     Return value
 
   End Function
+
+  Public Sub TestLegacyErrorFlow()
+    On Error Resume Next
+    Dim legacyValue As Integer = 1
+    Debug.Print(legacyValue)
+  End Sub
 End Class

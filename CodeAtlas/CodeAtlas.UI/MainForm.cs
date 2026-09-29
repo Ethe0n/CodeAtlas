@@ -681,6 +681,12 @@ public sealed class MainForm : Form
         .Select(edge => edge.From)
         .Distinct()
         .Count() ?? 0;
+    var errorHandlingMode = controlFlow?.Nodes
+        .SelectMany(node => node.Operations)
+        .Where(operation => operation.Role == ControlFlowOperationRole.ErrorHandlingDirective)
+        .Select(operation => operation.Text)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray() ?? [];
     var isEventHandler = context.Type.UiEventHandlers.Any(handler =>
         string.Equals(handler.HandlerMethodSymbolId, method.SymbolId, StringComparison.Ordinal) ||
         string.Equals(handler.HandlerMethodName, method.Name, StringComparison.Ordinal));
@@ -702,6 +708,9 @@ public sealed class MainForm : Form
             "Control Flow",
             $"CFG Blocks: {cfgBlocks}",
             $"Conditions: {conditions}",
+            string.Empty,
+            "Error Handling",
+            $"Mode: {(errorHandlingMode.Length == 0 ? "None" : string.Join(", ", errorHandlingMode))}",
             string.Empty,
             "Flags",
             $"Generated: {FormatBoolean(method.IsGenerated)}",

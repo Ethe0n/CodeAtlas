@@ -73,7 +73,9 @@ internal sealed class ControlFlowPresentationBuilder
     var legacyTexts = SplitOperationTexts(rawNode.Text);
     var operationTexts = rawNode.Operations.Count > 0
         ? rawNode.Operations
-            .Where(operation => operation.Role != ControlFlowOperationRole.ForEachIterationAssignment)
+            .Where(operation => operation.Role is not (
+                ControlFlowOperationRole.ForEachIterationAssignment or
+                ControlFlowOperationRole.ErrorHandlingDirective))
             .Select(operation => operation.Text)
             .ToArray()
         : rawNode.OperationTexts.Count > 0

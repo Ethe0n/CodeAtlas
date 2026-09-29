@@ -10,5 +10,6 @@ public sealed record ControlFlowOperationInfo(
 public enum ControlFlowOperationRole
 {
     None,
-    ForEachIterationAssignment
+    ForEachIterationAssignment,
+    ErrorHandlingDirective
 }

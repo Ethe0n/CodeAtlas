@@ -3,6 +3,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.FlowAnalysis;
 using Microsoft.CodeAnalysis.Operations;
 using Microsoft.CodeAnalysis.Text;
+using Microsoft.CodeAnalysis.VisualBasic;
 using Microsoft.CodeAnalysis.VisualBasic.Syntax;
 
 namespace CodeAtlas.Roslyn;
@@ -113,6 +114,11 @@ public sealed class ControlFlowAnalyzer
 
     private static ControlFlowOperationRole GetOperationRole(IOperation operation)
     {
+        if (IsErrorHandlingDirective(operation.Syntax))
+        {
+            return ControlFlowOperationRole.ErrorHandlingDirective;
+        }
+
         var candidate = operation is IExpressionStatementOperation expression
             ? expression.Operation
             : operation;
@@ -216,6 +222,11 @@ public sealed class ControlFlowAnalyzer
         IOperation operation,
         IReadOnlyDictionary<object, string> captureValues)
     {
+        if (operation.Syntax is MethodBlockBaseSyntax or MethodStatementSyntax)
+        {
+            return null;
+        }
+
         return operation switch
         {
             IFlowCaptureOperation => null,
@@ -224,8 +235,27 @@ public sealed class ControlFlowAnalyzer
             IReturnOperation returnOperation => returnOperation.ReturnedValue is null
                 ? "Return"
                 : $"Return {FormatExpression(returnOperation.ReturnedValue, captureValues)}",
-            _ => FormatSyntax(operation.Syntax)
+            _ => FormatFallbackOperation(operation)
         };
+    }
+
+    private static string? FormatFallbackOperation(IOperation operation)
+    {
+        if (operation.IsImplicit || operation.Syntax is not StatementSyntax)
+        {
+            return null;
+        }
+
+        return FormatSyntax(operation.Syntax);
+    }
+
+    private static bool IsErrorHandlingDirective(SyntaxNode syntax)
+    {
+        return syntax.Kind() is
+            SyntaxKind.OnErrorGoToZeroStatement or
+            SyntaxKind.OnErrorGoToMinusOneStatement or
+            SyntaxKind.OnErrorGoToLabelStatement or
+            SyntaxKind.OnErrorResumeNextStatement;
     }
 
     private static string FormatExpression(
