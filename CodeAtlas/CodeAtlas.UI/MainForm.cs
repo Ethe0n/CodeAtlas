@@ -12,9 +12,11 @@ public sealed class MainForm : Form
   private readonly TabPage _flowTab = new("Flow");
   private readonly Panel _relationsHost = new() { Dock = DockStyle.Fill };
   private readonly Panel _flowHost = new() { Dock = DockStyle.Fill };
+  private readonly Panel _overviewHost = new() { Dock = DockStyle.Fill };
   private readonly System.Windows.Forms.Label _relationsUnavailableLabel = CreateUnavailableLabel("Relations are not available for this selection.");
   private readonly System.Windows.Forms.Label _flowUnavailableLabel = CreateUnavailableLabel("Control flow is available for methods only.");
   private readonly TextBox _overviewText = CreateReadOnlyTextBox();
+  private readonly MethodOverviewView _methodOverviewView = new();
   private readonly CallGraphView _callGraphView = new();
   private readonly ControlFlowGraphView _controlFlowGraphView = new();
   private readonly ClassDependencyView _classDependencyView = new();
@@ -74,7 +76,8 @@ public sealed class MainForm : Form
 
     _detailsTabs.Dock = DockStyle.Fill;
     _overviewText.Dock = DockStyle.Fill;
-    _overviewTab.Controls.Add(_overviewText);
+    _overviewHost.Controls.Add(_overviewText);
+    _overviewTab.Controls.Add(_overviewHost);
     _relationsTab.Controls.Add(_relationsHost);
     _flowTab.Controls.Add(_flowHost);
     _detailsTabs.TabPages.Add(_overviewTab);
@@ -691,33 +694,16 @@ public sealed class MainForm : Form
         string.Equals(handler.HandlerMethodSymbolId, method.SymbolId, StringComparison.Ordinal) ||
         string.Equals(handler.HandlerMethodName, method.Name, StringComparison.Ordinal));
 
-    var lines = new[]
-    {
-            "Method",
-            $"Method Name: {method.Name}",
-            $"Full Name / Id: {method.SymbolId}",
-            $"Accessibility: {method.Accessibility}",
-            $"Declaring File: {method.FilePath ?? "(unknown)"}",
-            $"Source Line: {method.Span.StartLine}",
-            string.Empty,
-            "Calls",
-            $"Incoming Calls: {incomingCalls.Length}",
-            $"Outgoing Calls: {outgoingCalls.Length}",
-            $"External Calls: {externalCalls.Length}",
-            string.Empty,
-            "Control Flow",
-            $"CFG Blocks: {cfgBlocks}",
-            $"Conditions: {conditions}",
-            string.Empty,
-            "Error Handling",
-            $"Mode: {(errorHandlingMode.Length == 0 ? "None" : string.Join(", ", errorHandlingMode))}",
-            string.Empty,
-            "Flags",
-            $"Generated: {FormatBoolean(method.IsGenerated)}",
-            $"Event Handler: {FormatBoolean(isEventHandler)}"
-        };
-
-    _overviewText.Text = string.Join(Environment.NewLine, lines);
+    ShowOverviewView(_methodOverviewView);
+    _methodOverviewView.ShowMethod(
+        method,
+        incomingCalls.Length,
+        outgoingCalls.Length,
+        externalCalls.Length,
+        cfgBlocks,
+        conditions,
+        errorHandlingMode.Length == 0 ? "None" : string.Join(", ", errorHandlingMode),
+        isEventHandler);
   }
 
   private void ShowMethodCalls(MethodNodeContext context)
@@ -824,12 +810,21 @@ public sealed class MainForm : Form
   private void ClearDetails()
   {
     _overviewText.Clear();
+    _methodOverviewView.ClearOverview();
+    ShowOverviewView(_overviewText);
     _classDependencyView.ClearGraph();
     _projectDependencyView.ClearGraph();
     _callGraphView.ClearGraph();
     _controlFlowGraphView.ClearGraph();
     SetRelationsUnavailable();
     SetFlowUnavailable();
+  }
+
+  private void ShowOverviewView(Control view)
+  {
+    _overviewHost.Controls.Clear();
+    view.Dock = DockStyle.Fill;
+    _overviewHost.Controls.Add(view);
   }
 
   private void ShowRelationsView(Control view)
