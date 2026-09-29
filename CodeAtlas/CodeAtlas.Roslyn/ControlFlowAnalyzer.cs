@@ -55,25 +55,37 @@ public sealed class ControlFlowAnalyzer
         BasicBlock block,
         IReadOnlyDictionary<object, string> captureValues)
     {
-        var textLines = block.Operations
+        var operationTexts = block.Operations
             .Select(operation => FormatOperation(operation, captureValues))
             .Where(text => !string.IsNullOrWhiteSpace(text))
+            .Select(text => text!)
+            .ToArray();
+        var textLines = operationTexts
             .ToList();
+        string? condition = null;
+        string? returnText = null;
 
         if (block.BranchValue is not null && HasReturnSuccessor(block))
         {
-            textLines.Add($"Return {FormatExpression(block.BranchValue, captureValues)}");
+            returnText = $"Return {FormatExpression(block.BranchValue, captureValues)}";
+            textLines.Add(returnText);
         }
         else if (block.BranchValue is not null)
         {
-            textLines.Add($"Condition: {FormatExpression(block.BranchValue, captureValues)}");
+            condition = FormatExpression(block.BranchValue, captureValues);
+            textLines.Add($"Condition: {condition}");
         }
 
         return new ControlFlowNode(
             block.Ordinal,
             block.Kind.ToString(),
             string.Join(Environment.NewLine, textLines),
-            GetSourceLocation(block));
+            GetSourceLocation(block))
+        {
+            OperationTexts = operationTexts,
+            Condition = condition,
+            ReturnText = returnText
+        };
     }
 
     private static IEnumerable<ControlFlowEdge> ToEdges(

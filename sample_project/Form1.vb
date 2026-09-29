@@ -38,6 +38,7 @@
     Dim upperLimit As Integer = 100
     Dim adjustedValue As Integer = normalizedValue + adjustment
     value = Math.Min(Math.Max(adjustedValue, lowerLimit), upperLimit)
+    Dim colonStep1 As Integer = value : Dim colonStep2 As Integer = colonStep1 + 1 : Dim colonStep3 As Integer = colonStep2 + 1 : value = colonStep3 - 2
 
     If value > threshold Then
       value = value * multiplier

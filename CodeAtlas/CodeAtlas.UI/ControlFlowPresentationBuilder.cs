@@ -61,13 +61,15 @@ internal sealed class ControlFlowPresentationBuilder
       ];
     }
 
-    var operationTexts = SplitOperationTexts(rawNode.Text);
-    var conditionText = operationTexts.LastOrDefault(IsConditionOperation);
-    var returnText = conditionText is null
-        ? operationTexts.LastOrDefault(IsReturnOperation)
-        : null;
+    var legacyTexts = SplitOperationTexts(rawNode.Text);
+    var operationTexts = rawNode.OperationTexts.Count > 0
+        ? rawNode.OperationTexts
+        : legacyTexts.Where(operation => !IsConditionOperation(operation)).ToArray();
+    var conditionText = rawNode.Condition ?? legacyTexts
+        .LastOrDefault(IsConditionOperation)?["Condition: ".Length..];
+    var returnText = rawNode.ReturnText ?? operationTexts.LastOrDefault(IsReturnOperation);
     var bodyOperations = operationTexts
-        .Where(operation => !IsConditionOperation(operation) && !IsReturnOperation(operation))
+        .Where(operation => !IsReturnOperation(operation))
         .ToArray();
     var nodes = new List<ControlFlowPresentationNode>();
     var segmentIndex = 0;
@@ -87,7 +89,7 @@ internal sealed class ControlFlowPresentationBuilder
           rawNode,
           segmentIndex++,
           "Condition",
-          conditionText["Condition: ".Length..]));
+          conditionText));
     }
 
     if (returnText is not null)
