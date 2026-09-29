@@ -249,6 +249,11 @@ public sealed class ControlFlowGraphView : UserControl
 
   private static string FormatEdgeLabel(ControlFlowPresentationEdge edge)
   {
+    if (!string.IsNullOrWhiteSpace(edge.DisplayLabel))
+    {
+      return edge.DisplayLabel;
+    }
+
     return edge.Kind switch
     {
       "ConditionalTrue" => "True",

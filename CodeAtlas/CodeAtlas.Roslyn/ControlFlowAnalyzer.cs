@@ -55,10 +55,13 @@ public sealed class ControlFlowAnalyzer
         BasicBlock block,
         IReadOnlyDictionary<object, string> captureValues)
     {
-        var operationTexts = block.Operations
-            .Select(operation => FormatOperation(operation, captureValues))
-            .Where(text => !string.IsNullOrWhiteSpace(text))
-            .Select(text => text!)
+        var operations = block.Operations
+            .Select(operation => ToOperationInfo(operation, captureValues))
+            .Where(operation => operation is not null)
+            .Select(operation => operation!)
+            .ToArray();
+        var operationTexts = operations
+            .Select(operation => operation.Text)
             .ToArray();
         var textLines = operationTexts
             .ToList();
@@ -83,9 +86,88 @@ public sealed class ControlFlowAnalyzer
             GetSourceLocation(block))
         {
             OperationTexts = operationTexts,
+            Operations = operations,
             Condition = condition,
-            ReturnText = returnText
+            ReturnText = returnText,
+            ControlStructure = GetControlStructure(block)
         };
+    }
+
+    private static ControlFlowOperationInfo? ToOperationInfo(
+        IOperation operation,
+        IReadOnlyDictionary<object, string> captureValues)
+    {
+        var text = FormatOperation(operation, captureValues);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        return new ControlFlowOperationInfo(
+            operation.Kind.ToString(),
+            text,
+            operation.IsImplicit,
+            GetOperationRole(operation),
+            ToSpanInfo(operation.Syntax.GetLocation().GetLineSpan()));
+    }
+
+    private static ControlFlowOperationRole GetOperationRole(IOperation operation)
+    {
+        var candidate = operation is IExpressionStatementOperation expression
+            ? expression.Operation
+            : operation;
+
+        if (candidate is not ISimpleAssignmentOperation assignment ||
+            (!operation.IsImplicit && !assignment.IsImplicit))
+        {
+            return ControlFlowOperationRole.None;
+        }
+
+        var value = assignment.Value;
+        while (value is IConversionOperation conversion)
+        {
+            value = conversion.Operand;
+        }
+
+        if (value is not IPropertyReferenceOperation propertyReference ||
+            !propertyReference.IsImplicit ||
+            !string.Equals(propertyReference.Property.Name, "Current", StringComparison.Ordinal) ||
+            !HasForEachStatementSyntax(assignment.Syntax))
+        {
+            return ControlFlowOperationRole.None;
+        }
+
+        return ControlFlowOperationRole.ForEachIterationAssignment;
+    }
+
+    private static ControlFlowStructureInfo? GetControlStructure(BasicBlock block)
+    {
+        if (block.BranchValue is null)
+        {
+            return null;
+        }
+
+        var forEachStatement = block.BranchValue.Syntax
+            .AncestorsAndSelf()
+            .OfType<ForEachStatementSyntax>()
+            .FirstOrDefault();
+        if (forEachStatement is null)
+        {
+            return null;
+        }
+
+        return new ControlFlowStructureInfo(
+            ControlFlowStructureKind.ForEach,
+            FormatSyntax(forEachStatement),
+            ToSpanInfo(forEachStatement.GetLocation().GetLineSpan()));
+    }
+
+    private static bool HasForEachStatementSyntax(SyntaxNode syntax)
+    {
+        return syntax
+            .AncestorsAndSelf()
+            .OfType<ForEachStatementSyntax>()
+            .Any();
     }
 
     private static IEnumerable<ControlFlowEdge> ToEdges(

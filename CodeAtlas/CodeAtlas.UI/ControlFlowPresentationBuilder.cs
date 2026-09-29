@@ -10,6 +10,7 @@ internal sealed class ControlFlowPresentationBuilder
   {
     var nodes = new List<ControlFlowPresentationNode>();
     var chains = new Dictionary<int, IReadOnlyList<ControlFlowPresentationNode>>();
+    var rawNodesById = controlFlow.Nodes.ToDictionary(node => node.Id);
 
     foreach (var rawNode in controlFlow.Nodes)
     {
@@ -28,6 +29,7 @@ internal sealed class ControlFlowPresentationBuilder
             chain[index + 1].Id,
             "FallThrough",
             Condition: null,
+            DisplayLabel: null,
             IsBackEdge: false));
       }
     }
@@ -40,14 +42,21 @@ internal sealed class ControlFlowPresentationBuilder
         continue;
       }
 
+      var isBackEdge = rawEdge.To <= rawEdge.From;
       edges.Add(new ControlFlowPresentationEdge(
           sourceChain[^1].Id,
           targetChain[0].Id,
           rawEdge.Kind,
           rawEdge.Condition,
-          rawEdge.To <= rawEdge.From));
+          GetEdgeDisplayLabel(
+              rawNodesById[rawEdge.From],
+              rawNodesById[rawEdge.To],
+              rawEdge.Kind,
+              isBackEdge),
+          isBackEdge));
     }
 
+    CollapsePassThroughNodes(nodes, edges);
     return new ControlFlowPresentation(controlFlow.MethodName, nodes, edges);
   }
 
@@ -62,11 +71,18 @@ internal sealed class ControlFlowPresentationBuilder
     }
 
     var legacyTexts = SplitOperationTexts(rawNode.Text);
-    var operationTexts = rawNode.OperationTexts.Count > 0
-        ? rawNode.OperationTexts
+    var operationTexts = rawNode.Operations.Count > 0
+        ? rawNode.Operations
+            .Where(operation => operation.Role != ControlFlowOperationRole.ForEachIterationAssignment)
+            .Select(operation => operation.Text)
+            .ToArray()
+        : rawNode.OperationTexts.Count > 0
+            ? rawNode.OperationTexts
         : legacyTexts.Where(operation => !IsConditionOperation(operation)).ToArray();
-    var conditionText = rawNode.Condition ?? legacyTexts
-        .LastOrDefault(IsConditionOperation)?["Condition: ".Length..];
+    var conditionText = rawNode.ControlStructure?.Kind == ControlFlowStructureKind.ForEach
+        ? rawNode.ControlStructure.Text
+        : rawNode.Condition ?? legacyTexts
+            .LastOrDefault(IsConditionOperation)?["Condition: ".Length..];
     var returnText = rawNode.ReturnText ?? operationTexts.LastOrDefault(IsReturnOperation);
     var bodyOperations = operationTexts
         .Where(operation => !IsReturnOperation(operation))
@@ -141,6 +157,84 @@ internal sealed class ControlFlowPresentationBuilder
     return text.Equals("Return", StringComparison.Ordinal) ||
         text.StartsWith("Return ", StringComparison.Ordinal);
   }
+
+  private static string? GetEdgeDisplayLabel(
+      ControlFlowNode source,
+      ControlFlowNode target,
+      string edgeKind,
+      bool isBackEdge)
+  {
+    if (source.ControlStructure?.Kind == ControlFlowStructureKind.ForEach)
+    {
+      return edgeKind switch
+      {
+        "ConditionalTrue" => "Next",
+        "ConditionalFalse" => "Done",
+        _ => null
+      };
+    }
+
+    if (isBackEdge &&
+        target.ControlStructure?.Kind == ControlFlowStructureKind.ForEach &&
+        edgeKind is "ConditionalTrue" or "ConditionalFalse")
+    {
+      return edgeKind == "ConditionalTrue"
+          ? "True / Continue"
+          : "False / Continue";
+    }
+
+    return null;
+  }
+
+  private static void CollapsePassThroughNodes(
+      List<ControlFlowPresentationNode> nodes,
+      List<ControlFlowPresentationEdge> edges)
+  {
+    while (true)
+    {
+      var collapsed = false;
+      foreach (var node in nodes
+          .Where(node => node.Kind == "Block" && string.IsNullOrWhiteSpace(node.Text))
+          .ToArray())
+      {
+        var incoming = edges.Where(edge => edge.To == node.Id).ToArray();
+        var outgoing = edges.Where(edge => edge.From == node.Id).ToArray();
+        if (incoming.Length != 1 || outgoing.Length != 1)
+        {
+          continue;
+        }
+
+        var incomingEdge = incoming[0];
+        var outgoingEdge = outgoing[0];
+        var semanticEdge = incomingEdge.Kind != "FallThrough"
+            ? incomingEdge
+            : outgoingEdge;
+        var replacement = new ControlFlowPresentationEdge(
+            incomingEdge.From,
+            outgoingEdge.To,
+            semanticEdge.Kind,
+            semanticEdge.Condition,
+            incomingEdge.DisplayLabel ?? outgoingEdge.DisplayLabel,
+            incomingEdge.IsBackEdge || outgoingEdge.IsBackEdge);
+
+        nodes.Remove(node);
+        edges.Remove(incomingEdge);
+        edges.Remove(outgoingEdge);
+        if (!edges.Contains(replacement))
+        {
+          edges.Add(replacement);
+        }
+
+        collapsed = true;
+        break;
+      }
+
+      if (!collapsed)
+      {
+        return;
+      }
+    }
+  }
 }
 
 internal sealed record ControlFlowPresentation(
@@ -160,4 +254,5 @@ internal sealed record ControlFlowPresentationEdge(
     string To,
     string Kind,
     string? Condition,
+    string? DisplayLabel,
     bool IsBackEdge);
