@@ -71,6 +71,7 @@ public sealed class MainForm : Form
 
     _projectExplorer.Dock = DockStyle.Fill;
     _projectExplorer.HideSelection = false;
+    _projectExplorer.ShowNodeToolTips = true;
     _projectExplorer.AfterSelect += (_, args) => ShowNodeDetails(args.Node);
     _mainSplitContainer.Panel1.Controls.Add(_projectExplorer);
 
@@ -286,13 +287,71 @@ public sealed class MainForm : Form
 
     foreach (var project in solution.Projects)
     {
-      var projectNode = new TreeNode(project.Name) { Tag = project };
+      var projectNode = CreateProjectNode(project);
       _projectExplorer.Nodes.Add(projectNode);
       AddTypeNodes(projectNode, project, project.Types);
       projectNode.Expand();
     }
 
     _projectExplorer.EndUpdate();
+  }
+
+  private static TreeNode CreateProjectNode(ProjectStructure project)
+  {
+    var node = new TreeNode(project.AnalysisStatus switch
+    {
+      ProjectAnalysisStatus.Partial => $"{project.Name} [Partial]",
+      ProjectAnalysisStatus.Failed => $"{project.Name} [Load Failed]",
+      _ => project.Name
+    })
+    {
+      Tag = project
+    };
+
+    if (project.AnalysisStatus == ProjectAnalysisStatus.Partial)
+    {
+      node.ForeColor = Color.DarkOrange;
+    }
+    else if (project.AnalysisStatus == ProjectAnalysisStatus.Failed)
+    {
+      node.ForeColor = Color.Firebrick;
+    }
+
+    var primaryDiagnostic = project.Diagnostics
+        .FirstOrDefault(diagnostic => diagnostic.Severity == ProjectAnalysisDiagnosticSeverity.Error)
+        ?? project.Diagnostics.FirstOrDefault();
+    if (project.AnalysisStatus != ProjectAnalysisStatus.Full || primaryDiagnostic is not null)
+    {
+      var toolTipLines = new List<string>
+      {
+        project.AnalysisStatus switch
+        {
+          ProjectAnalysisStatus.Failed => "Project load failed",
+          ProjectAnalysisStatus.Partial => "Project loaded with partial analysis",
+          _ => "Project analysis diagnostic"
+        }
+      };
+      if (!string.IsNullOrWhiteSpace(project.FilePath))
+      {
+        toolTipLines.Add(project.FilePath);
+      }
+
+      if (primaryDiagnostic is not null)
+      {
+        var diagnosticMessage = primaryDiagnostic.Message.ReplaceLineEndings(" ").Trim();
+        const int maxToolTipMessageLength = 240;
+        if (diagnosticMessage.Length > maxToolTipMessageLength)
+        {
+          diagnosticMessage = $"{diagnosticMessage[..maxToolTipMessageLength]}...";
+        }
+
+        toolTipLines.Add($"{primaryDiagnostic.Stage}: {diagnosticMessage}");
+      }
+
+      node.ToolTipText = string.Join(Environment.NewLine, toolTipLines);
+    }
+
+    return node;
   }
 
   private static void AddTypeNodes(TreeNode parentNode, ProjectStructure project, IReadOnlyList<TypeStructure> types)
@@ -533,6 +592,7 @@ public sealed class MainForm : Form
         {
             "Project",
             $"Name                   {project.Name}",
+            $"Project File           {FormatOptional(project.FilePath)}",
             $"Analysis Status        {project.AnalysisStatus}",
             string.Empty,
             "Structure",
@@ -562,8 +622,9 @@ public sealed class MainForm : Form
 
     if (project.Diagnostics.Count > 0)
     {
+      var diagnosticsIndex = lines.IndexOf(string.Empty);
       lines.InsertRange(
-          3,
+          diagnosticsIndex,
           new[]
           {
               string.Empty,

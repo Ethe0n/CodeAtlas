@@ -59,4 +59,23 @@
     Dim legacyValue As Integer = 1
     Debug.Print(legacyValue)
   End Sub
+
+  Public Function TestSelectCase(value As Integer) As String
+    Dim result As String
+
+    Select Case value
+      Case 1
+        result = "One"
+      Case 2, 3
+        result = "Two or Three"
+      Case 4 To 6
+        result = "Range"
+      Case Is >= 10
+        result = "High"
+      Case Else
+        result = "Other"
+    End Select
+
+    Return result
+  End Function
 End Class

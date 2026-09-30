@@ -53,6 +53,28 @@ public sealed class ControlFlowGraphView : UserControl
       graph.LayerConstraints.AddUpDownConstraint(source, target);
     }
 
+    foreach (var selector in presentation.Nodes.Where(node => node.Kind == "SelectCase"))
+    {
+      var branchTargets = presentation.Edges
+          .Where(edge => edge.From == selector.Id && edge.Kind == "ControlStructureLink")
+          .Select(edge => graph.FindNode(edge.To))
+          .Where(node => node is not null)
+          .Select(node => node!)
+          .Distinct()
+          .ToArray();
+
+      if (branchTargets.Length > 1)
+      {
+        graph.LayerConstraints.PinNodesToSameLayer(branchTargets);
+        for (var index = 0; index < branchTargets.Length - 1; index++)
+        {
+          graph.LayerConstraints.AddLeftRightConstraint(
+              branchTargets[index],
+              branchTargets[index + 1]);
+        }
+      }
+    }
+
     var entry = presentation.Nodes
         .FirstOrDefault(n => n.Kind == "Entry");
 
@@ -211,11 +233,11 @@ public sealed class ControlFlowGraphView : UserControl
     var edgeColor = GetEdgeColor(edge.Kind);
 
     graphEdge.Attr.ArrowheadAtTarget = ArrowStyle.Normal;
-    graphEdge.Attr.LineWidth = edge.Kind is "ConditionalTrue" or "ConditionalFalse" ? 1.4 : 1;
+    graphEdge.Attr.LineWidth = edge.Kind is "ConditionalTrue" or "ConditionalFalse" or "ControlStructureLink" ? 1.4 : 1;
     graphEdge.Attr.Color = edgeColor;
 
     if (graphEdge.Label is not null &&
-        edge.Kind is "ConditionalTrue" or "ConditionalFalse")
+        edge.Kind is "ConditionalTrue" or "ConditionalFalse" or "ControlStructureLink")
     {
       graphEdge.Label.FontColor = edgeColor;
     }
@@ -233,6 +255,7 @@ public sealed class ControlFlowGraphView : UserControl
     {
       "ConditionalTrue" => Microsoft.Msagl.Drawing.Color.ForestGreen,
       "ConditionalFalse" => Microsoft.Msagl.Drawing.Color.Firebrick,
+      "ControlStructureLink" => new Microsoft.Msagl.Drawing.Color(184, 134, 11),
       _ => Microsoft.Msagl.Drawing.Color.DimGray
     };
   }
@@ -272,7 +295,7 @@ public sealed class ControlFlowGraphView : UserControl
 
   private static bool IsConditionNode(ControlFlowPresentationNode node)
   {
-    return node.Kind == "Condition";
+    return node.Kind is "Condition" or "SelectCase";
   }
 
   private static bool IsBackEdge(ControlFlowPresentationEdge edge)

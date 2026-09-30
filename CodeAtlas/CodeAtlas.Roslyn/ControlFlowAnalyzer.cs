@@ -148,24 +148,75 @@ public sealed class ControlFlowAnalyzer
 
     private static ControlFlowStructureInfo? GetControlStructure(BasicBlock block)
     {
-        if (block.BranchValue is null)
+        if (block.BranchValue is not null)
+        {
+            var forEachStatement = block.BranchValue.Syntax
+                .AncestorsAndSelf()
+                .OfType<ForEachStatementSyntax>()
+                .FirstOrDefault();
+            if (forEachStatement is not null)
+            {
+                return new ControlFlowStructureInfo(
+                    ControlFlowStructureKind.ForEach,
+                    FormatSyntax(forEachStatement),
+                    ToSpanInfo(forEachStatement.GetLocation().GetLineSpan()));
+            }
+        }
+
+        var syntax = block.BranchValue?.Syntax ?? block.Operations.FirstOrDefault()?.Syntax;
+        var caseBlock = syntax?
+            .AncestorsAndSelf()
+            .OfType<CaseBlockSyntax>()
+            .FirstOrDefault();
+        var selectBlock = caseBlock?
+            .AncestorsAndSelf()
+            .OfType<SelectBlockSyntax>()
+            .FirstOrDefault();
+        if (caseBlock is null || selectBlock is null)
         {
             return null;
         }
 
-        var forEachStatement = block.BranchValue.Syntax
-            .AncestorsAndSelf()
-            .OfType<ForEachStatementSyntax>()
-            .FirstOrDefault();
-        if (forEachStatement is null)
-        {
-            return null;
-        }
+        var branchSyntax = block.BranchValue?.Syntax;
+        var role = branchSyntax is not null && caseBlock.CaseStatement.Span.Contains(branchSyntax.Span)
+            ? ControlFlowStructureRole.BranchTest
+            : ControlFlowStructureRole.BranchBody;
 
         return new ControlFlowStructureInfo(
-            ControlFlowStructureKind.ForEach,
-            FormatSyntax(forEachStatement),
-            ToSpanInfo(forEachStatement.GetLocation().GetLineSpan()));
+            ControlFlowStructureKind.SelectCase,
+            FormatSyntax(selectBlock.SelectStatement),
+            ToSpanInfo(selectBlock.SelectStatement.GetLocation().GetLineSpan()))
+        {
+            GroupId = $"select_{selectBlock.SpanStart}_{selectBlock.Span.Length}",
+            Role = role,
+            BranchLabel = FormatSyntax(caseBlock.CaseStatement),
+            BranchCondition = FormatSelectCaseCondition(selectBlock, caseBlock)
+        };
+    }
+
+    private static string FormatSelectCaseCondition(
+        SelectBlockSyntax selectBlock,
+        CaseBlockSyntax caseBlock)
+    {
+        if (caseBlock.CaseStatement.Kind() == SyntaxKind.CaseElseStatement)
+        {
+            return "Else";
+        }
+
+        var selector = FormatSyntax(selectBlock.SelectStatement.Expression);
+        return string.Join(
+            " Or ",
+            caseBlock.CaseStatement.Cases.Select(caseClause => caseClause switch
+            {
+                SimpleCaseClauseSyntax simpleCase =>
+                    $"{selector} = {FormatSyntax(simpleCase.Value)}",
+                RangeCaseClauseSyntax rangeCase =>
+                    $"{selector} >= {FormatSyntax(rangeCase.LowerBound)} And " +
+                    $"{selector} <= {FormatSyntax(rangeCase.UpperBound)}",
+                RelationalCaseClauseSyntax relationalCase =>
+                    $"{selector} {relationalCase.OperatorToken.Text} {FormatSyntax(relationalCase.Value)}",
+                _ => $"{selector} matches {FormatSyntax(caseClause)}"
+            }));
     }
 
     private static bool HasForEachStatementSyntax(SyntaxNode syntax)
