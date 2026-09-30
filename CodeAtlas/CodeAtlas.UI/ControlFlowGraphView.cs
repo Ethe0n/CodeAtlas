@@ -33,11 +33,15 @@ public sealed class ControlFlowGraphView : UserControl
 
   private static void ApplyLayoutConstraints(
     Graph graph,
-    ControlFlowPresentation presentation)
+    ControlFlowPresentation presentation,
+    IReadOnlyList<SelectCaseFanout> selectCaseFanouts,
+    IReadOnlyList<SelectCaseMerge> selectCaseMerges)
   {
     foreach (var edge in presentation.Edges)
     {
-      if (IsBackEdge(edge))
+      if (IsBackEdge(edge) ||
+          edge.Kind == "ControlStructureLink" ||
+          IsSelectCaseMergeEdge(edge, selectCaseMerges))
       {
         continue;
       }
@@ -53,16 +57,36 @@ public sealed class ControlFlowGraphView : UserControl
       graph.LayerConstraints.AddUpDownConstraint(source, target);
     }
 
-    foreach (var selector in presentation.Nodes.Where(node => node.Kind == "SelectCase"))
+    foreach (var fanout in selectCaseFanouts)
     {
-      var branchTargets = presentation.Edges
-          .Where(edge => edge.From == selector.Id && edge.Kind == "ControlStructureLink")
-          .Select(edge => graph.FindNode(edge.To))
+      var selector = graph.FindNode(fanout.SelectorId);
+      var junction = graph.FindNode(fanout.JunctionId);
+      if (selector is not null && junction is not null)
+      {
+        graph.LayerConstraints.AddUpDownVerticalConstraint(selector, junction);
+      }
+
+      var busPoints = fanout.BusPointIds
+          .Select(graph.FindNode)
           .Where(node => node is not null)
           .Select(node => node!)
-          .Distinct()
           .ToArray();
+      if (busPoints.Length > 1)
+      {
+        graph.LayerConstraints.PinNodesToSameLayer(busPoints);
+        for (var index = 0; index < busPoints.Length - 1; index++)
+        {
+          graph.LayerConstraints.AddLeftRightConstraint(
+              busPoints[index],
+              busPoints[index + 1]);
+        }
+      }
 
+      var branchTargets = fanout.Branches
+          .Select(branch => graph.FindNode(branch.TargetId))
+          .Where(node => node is not null)
+          .Select(node => node!)
+          .ToArray();
       if (branchTargets.Length > 1)
       {
         graph.LayerConstraints.PinNodesToSameLayer(branchTargets);
@@ -72,6 +96,62 @@ public sealed class ControlFlowGraphView : UserControl
               branchTargets[index],
               branchTargets[index + 1]);
         }
+      }
+
+      foreach (var branch in fanout.Branches)
+      {
+        var tap = graph.FindNode(branch.TapId);
+        var target = graph.FindNode(branch.TargetId);
+        if (tap is not null && target is not null)
+        {
+          graph.LayerConstraints.AddUpDownVerticalConstraint(tap, target);
+        }
+      }
+    }
+
+    foreach (var merge in selectCaseMerges)
+    {
+      var busPoints = merge.BusPointIds
+          .Select(graph.FindNode)
+          .Where(node => node is not null)
+          .Select(node => node!)
+          .ToArray();
+      if (busPoints.Length > 1)
+      {
+        graph.LayerConstraints.PinNodesToSameLayer(busPoints);
+        for (var index = 0; index < busPoints.Length - 1; index++)
+        {
+          graph.LayerConstraints.AddLeftRightConstraint(
+              busPoints[index],
+              busPoints[index + 1]);
+        }
+      }
+
+      foreach (var branch in merge.Branches)
+      {
+        for (var index = 0; index < branch.PathNodeIds.Count - 1; index++)
+        {
+          var pathSource = graph.FindNode(branch.PathNodeIds[index]);
+          var pathTarget = graph.FindNode(branch.PathNodeIds[index + 1]);
+          if (pathSource is not null && pathTarget is not null)
+          {
+            graph.LayerConstraints.AddUpDownVerticalConstraint(pathSource, pathTarget);
+          }
+        }
+
+        var input = graph.FindNode(branch.InputId);
+        var tap = graph.FindNode(branch.TapId);
+        if (input is not null && tap is not null)
+        {
+          graph.LayerConstraints.AddUpDownVerticalConstraint(input, tap);
+        }
+      }
+
+      var junction = graph.FindNode(merge.JunctionId);
+      var target = graph.FindNode(merge.TargetId);
+      if (junction is not null && target is not null)
+      {
+        graph.LayerConstraints.AddUpDownVerticalConstraint(junction, target);
       }
     }
 
@@ -147,8 +227,28 @@ public sealed class ControlFlowGraphView : UserControl
       ConfigureNode(graphNode, node);
     }
 
+    var selectCaseFanouts = CreateSelectCaseFanouts(graph, presentation);
+    var selectCaseMerges = CreateSelectCaseMerges(
+        graph,
+        presentation,
+        selectCaseFanouts);
+
     foreach (var edge in presentation.Edges)
     {
+      if (edge.Kind == "ControlStructureLink" &&
+          selectCaseFanouts.Any(fanout =>
+              fanout.SelectorId == edge.From &&
+              fanout.Branches.Any(branch => branch.TargetId == edge.To)))
+      {
+        continue;
+      }
+
+
+      if (IsSelectCaseMergeEdge(edge, selectCaseMerges))
+      {
+        continue;
+      }
+
       var graphEdge = graph.AddEdge(
           edge.From,
           FormatEdgeLabel(edge),
@@ -156,7 +256,21 @@ public sealed class ControlFlowGraphView : UserControl
       ConfigureEdge(graphEdge, edge);
     }
 
-    ApplyLayoutConstraints(graph, presentation);
+    foreach (var fanout in selectCaseFanouts)
+    {
+      ConfigureSelectCaseFanoutEdges(graph, fanout);
+    }
+
+    foreach (var merge in selectCaseMerges)
+    {
+      ConfigureSelectCaseMergeEdges(graph, merge);
+    }
+
+    ApplyLayoutConstraints(
+        graph,
+        presentation,
+        selectCaseFanouts,
+        selectCaseMerges);
 
     _viewer.Graph = graph;
     _viewer.Visible = true;
@@ -184,8 +298,8 @@ public sealed class ControlFlowGraphView : UserControl
     graph.Attr.LayerDirection = LayerDirection.TB;
     graph.Attr.NodeSeparation = 48;
     graph.Attr.LayerSeparation = 70;
-    graph.Attr.MinNodeHeight = 30;
-    graph.Attr.MinNodeWidth = 50;
+    graph.Attr.MinNodeHeight = 1;
+    graph.Attr.MinNodeWidth = 1;
     graph.Attr.AspectRatio = 0.8;
 
     graph.LayoutAlgorithmSettings = new SugiyamaLayoutSettings
@@ -199,6 +313,328 @@ public sealed class ControlFlowGraphView : UserControl
         Padding = 8
       }
     };
+  }
+
+  private static IReadOnlyList<SelectCaseFanout> CreateSelectCaseFanouts(
+      Graph graph,
+      ControlFlowPresentation presentation)
+  {
+    var fanouts = new List<SelectCaseFanout>();
+
+    foreach (var selector in presentation.Nodes.Where(node => node.Kind == "SelectCase"))
+    {
+      var targets = presentation.Edges
+          .Where(edge => edge.From == selector.Id && edge.Kind == "ControlStructureLink")
+          .Select(edge => edge.To)
+          .Distinct(StringComparer.Ordinal)
+          .ToArray();
+      if (targets.Length < 2)
+      {
+        continue;
+      }
+
+      var junctionId = $"{selector.Id}_case_junction";
+      var busPointIds = new List<string>();
+      var branches = new List<SelectCaseFanoutBranch>();
+      var middleIndex = targets.Length / 2;
+
+      for (var index = 0; index < targets.Length; index++)
+      {
+        if (targets.Length % 2 == 0 && index == middleIndex)
+        {
+          busPointIds.Add(junctionId);
+        }
+
+        var tapId = targets.Length % 2 == 1 && index == middleIndex
+            ? junctionId
+            : $"{selector.Id}_case_tap_{index}";
+        busPointIds.Add(tapId);
+        branches.Add(new SelectCaseFanoutBranch(tapId, targets[index]));
+      }
+
+      foreach (var pointId in busPointIds.Distinct(StringComparer.Ordinal))
+      {
+        ConfigureInvisibleRoutingNode(graph.AddNode(pointId));
+      }
+
+      fanouts.Add(new SelectCaseFanout(
+          selector.Id,
+          junctionId,
+          busPointIds,
+          branches));
+    }
+
+    return fanouts;
+  }
+
+  private static IReadOnlyList<SelectCaseMerge> CreateSelectCaseMerges(
+      Graph graph,
+      ControlFlowPresentation presentation,
+      IReadOnlyList<SelectCaseFanout> fanouts)
+  {
+    var merges = new List<SelectCaseMerge>();
+
+    foreach (var fanout in fanouts)
+    {
+      var reachableByBranch = fanout.Branches
+          .Select(branch => GetReachableDistances(branch.TargetId, presentation.Edges))
+          .ToArray();
+      var commonNodeIds = reachableByBranch
+          .Select(distances => distances.Keys.AsEnumerable())
+          .Aggregate((common, nodeIds) => common.Intersect(nodeIds, StringComparer.Ordinal))
+          .Where(nodeId =>
+              nodeId != fanout.SelectorId &&
+              fanout.Branches.All(branch => branch.TargetId != nodeId))
+          .OrderBy(nodeId => reachableByBranch.Sum(distances => distances[nodeId]))
+          .ThenBy(nodeId => reachableByBranch.Max(distances => distances[nodeId]));
+
+      foreach (var commonNodeId in commonNodeIds)
+      {
+        var incomingEdges = presentation.Edges
+            .Where(edge => edge.To == commonNodeId && !edge.IsBackEdge)
+            .ToArray();
+        var mergeInputs = new List<string>();
+        var isValidMerge = true;
+
+        for (var branchIndex = 0; branchIndex < reachableByBranch.Length; branchIndex++)
+        {
+          var branchDistances = reachableByBranch[branchIndex];
+          var exclusiveEdges = incomingEdges
+              .Where(edge =>
+                  branchDistances.ContainsKey(edge.From) &&
+                  reachableByBranch
+                      .Where((_, index) => index != branchIndex)
+                      .All(otherDistances => !otherDistances.ContainsKey(edge.From)))
+              .Where(edge =>
+                  edge.Kind is "FallThrough" or "Return" &&
+                  string.IsNullOrWhiteSpace(edge.DisplayLabel))
+              .ToArray();
+          if (exclusiveEdges.Length != 1)
+          {
+            isValidMerge = false;
+            break;
+          }
+
+          mergeInputs.Add(exclusiveEdges[0].From);
+        }
+
+        if (!isValidMerge || mergeInputs.Distinct(StringComparer.Ordinal).Count() != mergeInputs.Count)
+        {
+          continue;
+        }
+
+        var junctionId = $"{fanout.SelectorId}_merge_junction";
+        var busPointIds = new List<string>();
+        var branches = new List<SelectCaseMergeBranch>();
+        var middleIndex = mergeInputs.Count / 2;
+
+        for (var index = 0; index < mergeInputs.Count; index++)
+        {
+          if (mergeInputs.Count % 2 == 0 && index == middleIndex)
+          {
+            busPointIds.Add(junctionId);
+          }
+
+          var tapId = mergeInputs.Count % 2 == 1 && index == middleIndex
+              ? junctionId
+              : $"{fanout.SelectorId}_merge_tap_{index}";
+          busPointIds.Add(tapId);
+          branches.Add(new SelectCaseMergeBranch(
+              mergeInputs[index],
+              tapId,
+              GetLinearPath(
+                  fanout.Branches[index].TargetId,
+                  mergeInputs[index],
+                  presentation.Edges)));
+        }
+
+        foreach (var pointId in busPointIds.Distinct(StringComparer.Ordinal))
+        {
+          ConfigureInvisibleRoutingNode(graph.AddNode(pointId));
+        }
+
+        merges.Add(new SelectCaseMerge(
+            junctionId,
+            commonNodeId,
+            busPointIds,
+            branches));
+        break;
+      }
+    }
+
+    return merges;
+  }
+
+  private static Dictionary<string, int> GetReachableDistances(
+      string startNodeId,
+      IReadOnlyList<ControlFlowPresentationEdge> edges)
+  {
+    var distances = new Dictionary<string, int>(StringComparer.Ordinal)
+    {
+      [startNodeId] = 0
+    };
+    var pending = new Queue<string>();
+    pending.Enqueue(startNodeId);
+
+    while (pending.Count > 0)
+    {
+      var current = pending.Dequeue();
+      foreach (var edge in edges.Where(edge => edge.From == current && !edge.IsBackEdge))
+      {
+        if (distances.ContainsKey(edge.To))
+        {
+          continue;
+        }
+
+        distances.Add(edge.To, distances[current] + 1);
+        pending.Enqueue(edge.To);
+      }
+    }
+
+    return distances;
+  }
+
+  private static IReadOnlyList<string> GetLinearPath(
+      string startNodeId,
+      string targetNodeId,
+      IReadOnlyList<ControlFlowPresentationEdge> edges)
+  {
+    var path = new List<string> { startNodeId };
+    var visited = new HashSet<string>(StringComparer.Ordinal) { startNodeId };
+    var current = startNodeId;
+
+    while (current != targetNodeId)
+    {
+      var nextNodeIds = edges
+          .Where(edge => edge.From == current && !edge.IsBackEdge)
+          .Select(edge => edge.To)
+          .Distinct(StringComparer.Ordinal)
+          .Where(nodeId => CanReach(nodeId, targetNodeId, edges))
+          .ToArray();
+      if (nextNodeIds.Length != 1 || !visited.Add(nextNodeIds[0]))
+      {
+        return Array.Empty<string>();
+      }
+
+      current = nextNodeIds[0];
+      path.Add(current);
+    }
+
+    return path;
+  }
+
+  private static bool CanReach(
+      string startNodeId,
+      string targetNodeId,
+      IReadOnlyList<ControlFlowPresentationEdge> edges)
+  {
+    if (startNodeId == targetNodeId)
+    {
+      return true;
+    }
+
+    var visited = new HashSet<string>(StringComparer.Ordinal) { startNodeId };
+    var pending = new Queue<string>();
+    pending.Enqueue(startNodeId);
+
+    while (pending.Count > 0)
+    {
+      var current = pending.Dequeue();
+      foreach (var edge in edges.Where(edge => edge.From == current && !edge.IsBackEdge))
+      {
+        if (edge.To == targetNodeId)
+        {
+          return true;
+        }
+
+        if (visited.Add(edge.To))
+        {
+          pending.Enqueue(edge.To);
+        }
+      }
+    }
+
+    return false;
+  }
+
+  private static void ConfigureInvisibleRoutingNode(Node node)
+  {
+    node.LabelText = string.Empty;
+    node.Attr.Shape = Shape.Point;
+    node.Attr.Padding = 0;
+    node.Attr.LabelMargin = 0;
+    node.Attr.LineWidth = 0;
+    node.Attr.Color = new Microsoft.Msagl.Drawing.Color(0, 0, 0, 0);
+    node.Attr.FillColor = new Microsoft.Msagl.Drawing.Color(0, 0, 0, 0);
+    if (node.Label is not null)
+    {
+      node.Label.FontSize = 1;
+    }
+  }
+
+  private static void ConfigureSelectCaseFanoutEdges(
+      Graph graph,
+      SelectCaseFanout fanout)
+  {
+    ConfigureRoutingEdge(graph.AddEdge(fanout.SelectorId, fanout.JunctionId), false);
+
+    for (var index = 0; index < fanout.BusPointIds.Count - 1; index++)
+    {
+      ConfigureRoutingEdge(graph.AddEdge(
+          fanout.BusPointIds[index],
+          fanout.BusPointIds[index + 1]), false);
+    }
+
+    foreach (var branch in fanout.Branches)
+    {
+      ConfigureRoutingEdge(graph.AddEdge(branch.TapId, branch.TargetId), true);
+    }
+  }
+
+  private static void ConfigureSelectCaseMergeEdges(
+      Graph graph,
+      SelectCaseMerge merge)
+  {
+    foreach (var branch in merge.Branches)
+    {
+      ConfigureMergeRoutingEdge(graph.AddEdge(branch.InputId, branch.TapId), false);
+    }
+
+    for (var index = 0; index < merge.BusPointIds.Count - 1; index++)
+    {
+      ConfigureMergeRoutingEdge(graph.AddEdge(
+          merge.BusPointIds[index],
+          merge.BusPointIds[index + 1]), false);
+    }
+
+    ConfigureMergeRoutingEdge(graph.AddEdge(merge.JunctionId, merge.TargetId), true);
+  }
+
+  private static void ConfigureRoutingEdge(Edge edge, bool showArrow)
+  {
+    edge.Attr.ArrowheadAtTarget = showArrow
+        ? ArrowStyle.Normal
+        : ArrowStyle.None;
+    edge.Attr.LineWidth = 1.4;
+    edge.Attr.Color = GetEdgeColor("ControlStructureLink");
+  }
+
+  private static void ConfigureMergeRoutingEdge(Edge edge, bool showArrow)
+  {
+    edge.Attr.ArrowheadAtTarget = showArrow
+        ? ArrowStyle.Normal
+        : ArrowStyle.None;
+    edge.Attr.LineWidth = 1;
+    edge.Attr.Color = Microsoft.Msagl.Drawing.Color.DimGray;
+  }
+
+  private static bool IsSelectCaseMergeEdge(
+      ControlFlowPresentationEdge edge,
+      IReadOnlyList<SelectCaseMerge> merges)
+  {
+    return merges.Any(merge =>
+        edge.To == merge.TargetId &&
+        merge.Branches.Any(branch => branch.InputId == edge.From));
   }
 
   private static void ConfigureNode(Node graphNode, ControlFlowPresentationNode node)
@@ -307,6 +743,27 @@ public sealed class ControlFlowGraphView : UserControl
   {
     return node.SegmentIndex == 0
         ? $"Block {node.SourceBlockId}"
-        : $"Block {node.SourceBlockId}.{node.SegmentIndex + 1}";
+            : $"Block {node.SourceBlockId}.{node.SegmentIndex + 1}";
   }
+
+  private sealed record SelectCaseFanout(
+      string SelectorId,
+      string JunctionId,
+      IReadOnlyList<string> BusPointIds,
+      IReadOnlyList<SelectCaseFanoutBranch> Branches);
+
+  private sealed record SelectCaseFanoutBranch(
+      string TapId,
+      string TargetId);
+
+  private sealed record SelectCaseMerge(
+      string JunctionId,
+      string TargetId,
+      IReadOnlyList<string> BusPointIds,
+      IReadOnlyList<SelectCaseMergeBranch> Branches);
+
+  private sealed record SelectCaseMergeBranch(
+      string InputId,
+      string TapId,
+      IReadOnlyList<string> PathNodeIds);
 }
