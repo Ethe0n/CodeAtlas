@@ -1,5 +1,5 @@
 # CodeAtlas
-vb net code analyzer
+CodeAtlas - VB(Visual Basic) .net code analyzer
 
 <img width="960" height="673" alt="Image" src="https://github.com/user-attachments/assets/d3b398d0-e045-4d80-828b-3a25ee32c4c8" />
 
@@ -11,7 +11,6 @@ vb net code analyzer
 - [ ] method flow 쉬운 편집을 위해 draw.io로 내보내기
 - [ ] Class overview 개선
 - [ ] Project overview 개선
-
 
 # Issue
 - [x] On Error Resume Next와 같은 키워드가 블록으로 처리됨
