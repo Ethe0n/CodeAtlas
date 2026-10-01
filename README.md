@@ -15,6 +15,7 @@ CodeAtlas - VB(Visual Basic) .net code analyzer
 - [ ] 트리 레벨 0, 1, 2 조절하기
 - [ ] UI Controls, UI Event handlers 좀 더 보기 편하게
 - [ ] data.json 파일로 빼서 매번 로딩 반복 안하도록 하기
+- [ ] 검색 기능 추가
 
 # Issue
 - [x] On Error Resume Next와 같은 키워드가 블록으로 처리됨
@@ -27,4 +28,4 @@ CodeAtlas - VB(Visual Basic) .net code analyzer
 - [ ] UI preview 작동 제대로 안 함
 - [ ] draw.io export 시 invalid data 오류 발생
 - [ ] project overview, field table 등등 내용이 많으면 로딩 및 스크롤 시 렉 발생
-- [ ] 가끔 flow chart에서 main graph와 연결 안된 sub graph가 있음.
+- [ ] 가끔 flow chart에서 main graph와 연결 안된 sub graph가 있음. Using을 제대로 파싱 못하는 걸로 추측
