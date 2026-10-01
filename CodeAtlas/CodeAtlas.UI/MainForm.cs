@@ -20,6 +20,7 @@ public sealed class MainForm : Form
   private readonly MethodOverviewView _methodOverviewView = new();
   private readonly FieldListView _fieldListView = new();
   private readonly PropertyListView _propertyListView = new();
+  private readonly UserInterfaceView _userInterfaceView = new();
   private readonly CallGraphView _callGraphView = new();
   private readonly ControlFlowGraphView _controlFlowGraphView = new();
   private readonly ClassDependencyView _classDependencyView = new();
@@ -62,6 +63,7 @@ public sealed class MainForm : Form
     _classOverviewView.FieldSelected += ShowFieldBySymbolId;
     _fieldListView.FieldActivated += ShowFieldFromList;
     _propertyListView.PropertyActivated += ShowPropertyFromList;
+    _userInterfaceView.MethodSelected += SelectMethodNodeBySymbolId;
   }
 
   protected override void OnShown(EventArgs e)
@@ -412,8 +414,7 @@ public sealed class MainForm : Form
 
     AddFieldNodes(typeNode, project, type);
     AddPropertyNodes(typeNode, project, type);
-    AddUiControlNodes(typeNode, type);
-    AddUiEventHandlerNodes(typeNode, type);
+    AddUserInterfaceNode(typeNode, project, type);
     AddMethodNodes(typeNode, project, type);
 
     if (!nestedTypesByParent.TryGetValue(type.SymbolId, out var nestedTypes))
@@ -448,26 +449,17 @@ public sealed class MainForm : Form
     typeNode.Nodes.Add(groupNode);
   }
 
-  private static void AddUiControlNodes(TreeNode typeNode, TypeStructure type)
+  private static void AddUserInterfaceNode(
+      TreeNode typeNode,
+      ProjectStructure project,
+      TypeStructure type)
   {
-    var groupNode = new TreeNode($"UI Controls ({type.UiControls.Count})") { Tag = type.UiControls };
-    typeNode.Nodes.Add(groupNode);
-
-    foreach (var control in type.UiControls)
+    var groupNode = new TreeNode(
+        $"User Interface ({type.UiControls.Count} controls, {type.UiEventHandlers.Count} events)")
     {
-      groupNode.Nodes.Add(new TreeNode($"{control.Name} : {ShortTypeName(control.Type)}") { Tag = control });
-    }
-  }
-
-  private static void AddUiEventHandlerNodes(TreeNode typeNode, TypeStructure type)
-  {
-    var groupNode = new TreeNode($"UI Event Handlers ({type.UiEventHandlers.Count})") { Tag = type.UiEventHandlers };
+      Tag = new UserInterfaceNodeContext(project, type)
+    };
     typeNode.Nodes.Add(groupNode);
-
-    foreach (var handler in type.UiEventHandlers)
-    {
-      groupNode.Nodes.Add(new TreeNode($"{handler.ControlName}.{handler.EventName} -> {handler.HandlerMethodName}") { Tag = handler });
-    }
   }
 
   private static void AddMethodNodes(TreeNode typeNode, ProjectStructure project, TypeStructure type)
@@ -513,6 +505,9 @@ public sealed class MainForm : Form
         break;
       case PropertyNodeContext propertyContext:
         ShowPropertyOverview(propertyContext);
+        break;
+      case UserInterfaceNodeContext userInterfaceContext:
+        ShowUserInterface(userInterfaceContext);
         break;
       case MethodNodeContext methodContext:
         ShowMethodOverview(methodContext);
@@ -790,6 +785,12 @@ public sealed class MainForm : Form
     _overviewText.Text = string.Join(Environment.NewLine, lines);
   }
 
+  private void ShowUserInterface(UserInterfaceNodeContext context)
+  {
+    _userInterfaceView.ShowType(context.Type);
+    ShowOverviewView(_userInterfaceView);
+  }
+
   private void ShowMethodOverview(MethodNodeContext context)
   {
     var method = context.Method;
@@ -950,6 +951,7 @@ public sealed class MainForm : Form
     _methodOverviewView.ClearOverview();
     _fieldListView.ClearFields();
     _propertyListView.ClearProperties();
+    _userInterfaceView.ClearView();
     ShowOverviewView(_overviewText);
     _classDependencyView.ClearGraph();
     _projectDependencyView.ClearGraph();
@@ -1117,6 +1119,8 @@ public sealed class MainForm : Form
   private sealed record FieldNodeContext(ProjectStructure Project, TypeStructure Type, FieldStructure Field);
 
   private sealed record PropertyNodeContext(ProjectStructure Project, TypeStructure Type, PropertyStructure Property);
+
+  private sealed record UserInterfaceNodeContext(ProjectStructure Project, TypeStructure Type);
 
   private sealed record MethodNodeContext(ProjectStructure Project, TypeStructure Type, MethodStructure Method);
 }

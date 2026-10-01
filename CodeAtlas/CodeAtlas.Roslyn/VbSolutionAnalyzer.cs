@@ -431,7 +431,8 @@ public sealed class VbSolutionAnalyzer
                     Methods = methods,
                     GeneratedMethods = generatedMethods,
                     UiControls = uiControls,
-                    UiEventHandlers = uiEventHandlers
+                    UiEventHandlers = uiEventHandlers,
+                    UiPreview = group.Select(type => type.UiPreview).FirstOrDefault(preview => preview is not null)
                 };
             })
             .OrderBy(type => type.FullName, StringComparer.Ordinal)

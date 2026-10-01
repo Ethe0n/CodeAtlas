@@ -161,6 +161,15 @@ public sealed class VbSyntaxStructureExtractor
         var uiControls = isDesignerDocument
             ? ExtractUiControls(classBlock, semanticModel, filePath, projectDirectory).ToArray()
             : Array.Empty<UiControlInfo>();
+        UiPreviewInfo? uiPreview = null;
+        if (isDesignerDocument && uiControls.Length > 0)
+        {
+            var designerInfo = ExtractUiDesignerInfo(classBlock, semanticModel, typeSymbol.Name, uiControls);
+            uiControls = uiControls
+                .Select(control => ApplyUiDesignerInfo(control, designerInfo))
+                .ToArray();
+            uiPreview = designerInfo.Preview;
+        }
 
         var uiEventHandlers = classBlock.Members
             .OfType<MethodBlockSyntax>()
@@ -185,7 +194,10 @@ public sealed class VbSyntaxStructureExtractor
             methods,
             generatedMethods,
             uiControls,
-            uiEventHandlers);
+            uiEventHandlers)
+        {
+            UiPreview = uiPreview
+        };
     }
 
     private static IEnumerable<FieldStructure> ExtractFieldLikeMember(
@@ -582,6 +594,222 @@ public sealed class VbSyntaxStructureExtractor
         }
     }
 
+    private static UiDesignerInfo ExtractUiDesignerInfo(
+        ClassBlockSyntax classBlock,
+        SemanticModel semanticModel,
+        string typeName,
+        IReadOnlyList<UiControlInfo> controls)
+    {
+        var initializeComponent = classBlock.Members
+            .OfType<MethodBlockSyntax>()
+            .FirstOrDefault(method => string.Equals(
+                method.SubOrFunctionStatement.Identifier.ValueText,
+                "InitializeComponent",
+                StringComparison.Ordinal));
+        if (initializeComponent is null)
+        {
+            return new UiDesignerInfo(null, new Dictionary<string, UiControlLayoutBuilder>(StringComparer.OrdinalIgnoreCase));
+        }
+
+        var layouts = controls.ToDictionary(
+            control => control.Name,
+            _ => new UiControlLayoutBuilder(),
+            StringComparer.OrdinalIgnoreCase);
+        int? clientWidth = null;
+        int? clientHeight = null;
+        string? title = null;
+
+        foreach (var assignmentSyntax in initializeComponent.DescendantNodes().OfType<AssignmentStatementSyntax>())
+        {
+            var assignmentOperation = semanticModel.GetOperation(assignmentSyntax);
+            var assignment = assignmentOperation is null
+                ? null
+                : DescendantsAndSelf(assignmentOperation).OfType<ISimpleAssignmentOperation>().FirstOrDefault();
+            if (assignment is null ||
+                UnwrapOperation(assignment.Target) is not IPropertyReferenceOperation propertyReference)
+            {
+                continue;
+            }
+
+            var propertyName = propertyReference.Property.Name;
+            var controlName = GetReferencedControlName(propertyReference.Instance);
+            if (controlName is null)
+            {
+                if (string.Equals(propertyName, "ClientSize", StringComparison.Ordinal) &&
+                    TryGetIntegerPair(assignment.Value, out var width, out var height))
+                {
+                    clientWidth = width;
+                    clientHeight = height;
+                }
+                else if (string.Equals(propertyName, "Text", StringComparison.Ordinal) &&
+                         TryGetConstantString(assignment.Value, out var formText))
+                {
+                    title = formText;
+                }
+
+                continue;
+            }
+
+            if (!layouts.TryGetValue(controlName, out var layout))
+            {
+                continue;
+            }
+
+            if (string.Equals(propertyName, "Location", StringComparison.Ordinal) &&
+                TryGetIntegerPair(assignment.Value, out var x, out var y))
+            {
+                layout.X = x;
+                layout.Y = y;
+            }
+            else if (string.Equals(propertyName, "Size", StringComparison.Ordinal) &&
+                     TryGetIntegerPair(assignment.Value, out var controlWidth, out var controlHeight))
+            {
+                layout.Width = controlWidth;
+                layout.Height = controlHeight;
+            }
+            else if (string.Equals(propertyName, "Text", StringComparison.Ordinal) &&
+                     TryGetConstantString(assignment.Value, out var controlText))
+            {
+                layout.Text = controlText;
+            }
+            else if (string.Equals(propertyName, "TabIndex", StringComparison.Ordinal) &&
+                     TryGetConstantInteger(assignment.Value, out var tabIndex))
+            {
+                layout.TabIndex = tabIndex;
+            }
+        }
+
+        foreach (var invocationSyntax in initializeComponent.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        {
+            var invocationOperation = semanticModel.GetOperation(invocationSyntax);
+            var invocation = invocationOperation is null
+                ? null
+                : DescendantsAndSelf(invocationOperation).OfType<IInvocationOperation>().FirstOrDefault();
+            if (invocation is null ||
+                !string.Equals(invocation.TargetMethod.Name, "Add", StringComparison.Ordinal) ||
+                invocation.Arguments.Length != 1)
+            {
+                continue;
+            }
+
+            var childName = GetReferencedControlName(invocation.Arguments[0].Value);
+            if (childName is null || !layouts.TryGetValue(childName, out var childLayout))
+            {
+                continue;
+            }
+
+            childLayout.ParentName = GetCollectionOwnerName(invocation.Instance);
+        }
+
+        return new UiDesignerInfo(
+            new UiPreviewInfo(title ?? typeName, clientWidth, clientHeight),
+            layouts);
+    }
+
+    private static UiControlInfo ApplyUiDesignerInfo(UiControlInfo control, UiDesignerInfo designerInfo)
+    {
+        if (!designerInfo.Layouts.TryGetValue(control.Name, out var layout))
+        {
+            return control;
+        }
+
+        var bounds = layout.X.HasValue &&
+                     layout.Y.HasValue &&
+                     layout.Width.HasValue &&
+                     layout.Height.HasValue
+            ? new UiControlBounds(layout.X.Value, layout.Y.Value, layout.Width.Value, layout.Height.Value)
+            : null;
+
+        return control with
+        {
+            Bounds = bounds,
+            DisplayText = layout.Text,
+            ParentName = layout.ParentName,
+            TabIndex = layout.TabIndex
+        };
+    }
+
+    private static string? GetCollectionOwnerName(IOperation? operation)
+    {
+        operation = UnwrapOperation(operation);
+        return operation is IPropertyReferenceOperation propertyReference &&
+               (string.Equals(propertyReference.Property.Name, "Controls", StringComparison.Ordinal) ||
+                string.Equals(propertyReference.Property.Name, "TabPages", StringComparison.Ordinal))
+            ? GetReferencedControlName(propertyReference.Instance)
+            : null;
+    }
+
+    private static string? GetReferencedControlName(IOperation? operation)
+    {
+        operation = UnwrapOperation(operation);
+        return operation switch
+        {
+            IFieldReferenceOperation fieldReference => fieldReference.Field.Name,
+            IPropertyReferenceOperation propertyReference
+                when propertyReference.Property.IsStatic == false && propertyReference.Instance is not null
+                => propertyReference.Property.Name,
+            _ => null
+        };
+    }
+
+    private static bool TryGetIntegerPair(IOperation operation, out int first, out int second)
+    {
+        operation = UnwrapOperation(operation)!;
+        if (operation is IObjectCreationOperation creation &&
+            creation.Arguments.Length >= 2 &&
+            TryGetConstantInteger(creation.Arguments[0].Value, out first) &&
+            TryGetConstantInteger(creation.Arguments[1].Value, out second))
+        {
+            return true;
+        }
+
+        first = 0;
+        second = 0;
+        return false;
+    }
+
+    private static bool TryGetConstantInteger(IOperation operation, out int value)
+    {
+        operation = UnwrapOperation(operation)!;
+        if (operation.ConstantValue.HasValue)
+        {
+            try
+            {
+                value = Convert.ToInt32(operation.ConstantValue.Value);
+                return true;
+            }
+            catch (Exception) when (operation.ConstantValue.Value is not null)
+            {
+            }
+        }
+
+        value = 0;
+        return false;
+    }
+
+    private static bool TryGetConstantString(IOperation operation, out string value)
+    {
+        operation = UnwrapOperation(operation)!;
+        if (operation.ConstantValue is { HasValue: true, Value: string text })
+        {
+            value = text;
+            return true;
+        }
+
+        value = string.Empty;
+        return false;
+    }
+
+    private static IOperation? UnwrapOperation(IOperation? operation)
+    {
+        while (operation is IConversionOperation conversion)
+        {
+            operation = conversion.Operand;
+        }
+
+        return operation;
+    }
+
     private static string? GetFieldInitializer(SyntaxNode syntax)
     {
         return syntax.FirstAncestorOrSelf<VariableDeclaratorSyntax>()
@@ -884,5 +1112,26 @@ public sealed class VbSyntaxStructureExtractor
             lineSpan.StartLinePosition.Character + 1,
             lineSpan.EndLinePosition.Line + 1,
             lineSpan.EndLinePosition.Character + 1);
+    }
+
+    private sealed record UiDesignerInfo(
+        UiPreviewInfo? Preview,
+        IReadOnlyDictionary<string, UiControlLayoutBuilder> Layouts);
+
+    private sealed class UiControlLayoutBuilder
+    {
+        public int? X { get; set; }
+
+        public int? Y { get; set; }
+
+        public int? Width { get; set; }
+
+        public int? Height { get; set; }
+
+        public string? Text { get; set; }
+
+        public string? ParentName { get; set; }
+
+        public int? TabIndex { get; set; }
     }
 }

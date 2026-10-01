@@ -16,4 +16,7 @@ public sealed record TypeStructure(
     IReadOnlyList<MethodStructure> Methods,
     IReadOnlyList<MethodStructure> GeneratedMethods,
     IReadOnlyList<UiControlInfo> UiControls,
-    IReadOnlyList<UiEventHandlerInfo> UiEventHandlers);
+    IReadOnlyList<UiEventHandlerInfo> UiEventHandlers)
+{
+    public UiPreviewInfo? UiPreview { get; init; }
+}
