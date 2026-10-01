@@ -11,9 +11,10 @@ CodeAtlas - VB(Visual Basic) .net code analyzer
 - [x] method flow 쉬운 편집을 위해 draw.io로 내보내기
 - [x] Class overview 개선
 - [x] field, property 테이블로 정리
-- [ ] Project overview 개선
+- [x] Project overview 개선
 - [ ] 트리 레벨 0, 1, 2 조절하기
 - [ ] UI Controls, UI Event handlers 좀 더 보기 편하게
+- [ ] data.json 파일로 빼서 매번 로딩 반복 안하도록 하기
 
 # Issue
 - [x] On Error Resume Next와 같은 키워드가 블록으로 처리됨
