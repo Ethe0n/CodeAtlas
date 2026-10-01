@@ -369,6 +369,43 @@ public sealed class ControlFlowGraphView : UserControl
     }
   }
 
+  public void ExportDrawIo(IWin32Window owner)
+  {
+    var graph = _viewer.Graph;
+    if (graph?.GeometryGraph is null)
+    {
+      return;
+    }
+
+    using var dialog = new SaveFileDialog
+    {
+      AddExtension = true,
+      DefaultExt = "drawio",
+      FileName = $"{CreateSafeFileName(graph.Label?.Text)}_CFG.drawio",
+      Filter = "draw.io Diagram (*.drawio)|*.drawio|draw.io XML (*.xml)|*.xml",
+      OverwritePrompt = true,
+      Title = "Export Control Flow to draw.io"
+    };
+    if (dialog.ShowDialog(owner) != DialogResult.OK)
+    {
+      return;
+    }
+
+    try
+    {
+      DrawIoControlFlowExporter.Export(graph, dialog.FileName);
+    }
+    catch (Exception exception)
+    {
+      MessageBox.Show(
+          owner,
+          exception.Message,
+          "Export Control Flow to draw.io",
+          MessageBoxButtons.OK,
+          MessageBoxIcon.Error);
+    }
+  }
+
   public void ClearGraph()
   {
     _viewer.Graph = null;

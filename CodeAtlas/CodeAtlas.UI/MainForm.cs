@@ -32,6 +32,7 @@ public sealed class MainForm : Form
   private readonly ToolStripButton _cancelAnalysisButton = new("Cancel") { Visible = false };
   private readonly ToolStripMenuItem _openSolutionMenuItem = new("&Open Solution...");
   private readonly ToolStripMenuItem _exportFlowImageMenuItem = new("Export Flow Image...") { Enabled = false };
+  private readonly ToolStripMenuItem _exportFlowDiagramMenuItem = new("Export Flow Diagram...") { Enabled = false };
   private readonly SplitContainer _mainSplitContainer = new();
 
   private SolutionStructure? _solution;
@@ -49,6 +50,7 @@ public sealed class MainForm : Form
     BuildLayout();
     _openSolutionMenuItem.Click += async (_, _) => await OpenSolutionAsync();
     _exportFlowImageMenuItem.Click += (_, _) => _controlFlowGraphView.ExportImage(this);
+    _exportFlowDiagramMenuItem.Click += (_, _) => _controlFlowGraphView.ExportDrawIo(this);
     _cancelAnalysisButton.Click += (_, _) => CancelAnalysis();
     _callGraphView.MethodSelected += SelectMethodNodeBySymbolId;
     _classDependencyView.TypeSelected += SelectTypeNodeBySymbolId;
@@ -70,6 +72,7 @@ public sealed class MainForm : Form
     fileMenu.DropDownItems.Add(_openSolutionMenuItem);
     fileMenu.DropDownItems.Add(new ToolStripSeparator());
     fileMenu.DropDownItems.Add(_exportFlowImageMenuItem);
+    fileMenu.DropDownItems.Add(_exportFlowDiagramMenuItem);
     menuStrip.Items.Add(fileMenu);
     MainMenuStrip = menuStrip;
 
@@ -846,6 +849,7 @@ public sealed class MainForm : Form
     ShowFlowView(_controlFlowGraphView);
     _controlFlowGraphView.ShowGraph(controlFlow);
     _exportFlowImageMenuItem.Enabled = _controlFlowGraphView.CanExport;
+    _exportFlowDiagramMenuItem.Enabled = _controlFlowGraphView.CanExport;
   }
 
   private void SelectMethodNodeBySymbolId(string methodSymbolId)
@@ -915,6 +919,7 @@ public sealed class MainForm : Form
   private void ClearDetails()
   {
     _exportFlowImageMenuItem.Enabled = false;
+    _exportFlowDiagramMenuItem.Enabled = false;
     _activeFieldsContext = null;
     _overviewText.Clear();
     _methodOverviewView.ClearOverview();
