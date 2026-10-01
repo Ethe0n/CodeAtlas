@@ -20,4 +20,4 @@ vb net code analyzer
 - [x] block N 과 같은 필요없는 블록이 출력됨
 - [x] switch ~ case 문을 제대로 파싱 못함
 - [ ] 클래스 구조에서 {클래스 변수명}.{변수 명}이 있을 때 클래스 변수 명은 생략되고 변수 이름만 나와서 제대로 된 정보 전달 안됨(Ex. test.value = 10 으로 나와야 하는데 value = 10으로 나옴)
-- [ ] switch case의 case 분기 이후 if가 들어가면 flow가 꼬이는 문제
+- [ ] switch case의 case 분기 이후 if가 들어가면 branch가 꼬이는 문제
