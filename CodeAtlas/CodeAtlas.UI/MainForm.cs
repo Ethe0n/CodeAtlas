@@ -17,6 +17,7 @@ public sealed class MainForm : Form
   private readonly System.Windows.Forms.Label _flowUnavailableLabel = CreateUnavailableLabel("Control flow is available for methods only.");
   private readonly TextBox _overviewText = CreateReadOnlyTextBox();
   private readonly MethodOverviewView _methodOverviewView = new();
+  private readonly FieldListView _fieldListView = new();
   private readonly CallGraphView _callGraphView = new();
   private readonly ControlFlowGraphView _controlFlowGraphView = new();
   private readonly ClassDependencyView _classDependencyView = new();
@@ -34,6 +35,7 @@ public sealed class MainForm : Form
 
   private SolutionStructure? _solution;
   private CancellationTokenSource? _analysisCancellation;
+  private FieldsNodeContext? _activeFieldsContext;
   private bool _initialSplitterDistanceApplied;
 
   public MainForm()
@@ -49,6 +51,7 @@ public sealed class MainForm : Form
     _callGraphView.MethodSelected += SelectMethodNodeBySymbolId;
     _classDependencyView.TypeSelected += SelectTypeNodeBySymbolId;
     _projectDependencyView.TypeSelected += SelectTypeNodeBySymbolId;
+    _fieldListView.FieldActivated += ShowFieldFromList;
   }
 
   protected override void OnShown(EventArgs e)
@@ -73,6 +76,15 @@ public sealed class MainForm : Form
     _projectExplorer.HideSelection = false;
     _projectExplorer.ShowNodeToolTips = true;
     _projectExplorer.AfterSelect += (_, args) => ShowNodeDetails(args.Node);
+    _projectExplorer.NodeMouseClick += (_, args) =>
+    {
+      if (ReferenceEquals(_projectExplorer.SelectedNode, args.Node) &&
+          args.Node.Tag is FieldsNodeContext &&
+          !_overviewHost.Controls.Contains(_fieldListView))
+      {
+        ShowNodeDetails(args.Node);
+      }
+    };
     _mainSplitContainer.Panel1.Controls.Add(_projectExplorer);
 
     _detailsTabs.Dock = DockStyle.Fill;
@@ -398,13 +410,11 @@ public sealed class MainForm : Form
 
   private static void AddFieldNodes(TreeNode typeNode, ProjectStructure project, TypeStructure type)
   {
-    var groupNode = new TreeNode($"Fields ({type.Fields.Count})") { Tag = type.Fields };
-    typeNode.Nodes.Add(groupNode);
-
-    foreach (var field in type.Fields)
+    var groupNode = new TreeNode($"Fields ({type.Fields.Count})")
     {
-      groupNode.Nodes.Add(new TreeNode($"{field.Name} : {field.Type}") { Tag = new FieldNodeContext(project, type, field) });
-    }
+      Tag = new FieldsNodeContext(project, type)
+    };
+    typeNode.Nodes.Add(groupNode);
   }
 
   private static void AddPropertyNodes(TreeNode typeNode, TypeStructure type)
@@ -471,6 +481,9 @@ public sealed class MainForm : Form
         ShowClassOverview(typeContext);
         ShowClassDependency(typeContext);
         relationsAvailable = true;
+        break;
+      case FieldsNodeContext fieldsContext:
+        ShowFieldsOverview(fieldsContext);
         break;
       case FieldNodeContext fieldContext:
         ShowFieldOverview(fieldContext);
@@ -655,6 +668,7 @@ public sealed class MainForm : Form
   }
   private void ShowFieldOverview(FieldNodeContext context)
   {
+    ShowOverviewView(_overviewText);
     var field = context.Field;
     var usages = context.Project.FieldUsages
         .Where(usage => string.Equals(usage.FieldSymbolId, field.SymbolId, StringComparison.Ordinal))
@@ -719,6 +733,31 @@ public sealed class MainForm : Form
     AppendIndentedList(lines, writtenByMethods);
 
     _overviewText.Text = string.Join(Environment.NewLine, lines);
+  }
+
+  private void ShowFieldsOverview(FieldsNodeContext context)
+  {
+    _activeFieldsContext = context;
+    _fieldListView.ShowFields(context.Type.Fields);
+    ShowOverviewView(_fieldListView);
+  }
+
+  private void ShowFieldFromList(FieldStructure field)
+  {
+    if (_activeFieldsContext is null ||
+        !string.Equals(
+            field.DeclaringTypeSymbolId,
+            _activeFieldsContext.Type.SymbolId,
+            StringComparison.Ordinal))
+    {
+      return;
+    }
+
+    ShowFieldOverview(new FieldNodeContext(
+        _activeFieldsContext.Project,
+        _activeFieldsContext.Type,
+        field));
+    _detailsTabs.SelectedTab = _overviewTab;
   }
 
   private void ShowMethodOverview(MethodNodeContext context)
@@ -870,8 +909,10 @@ public sealed class MainForm : Form
 
   private void ClearDetails()
   {
+    _activeFieldsContext = null;
     _overviewText.Clear();
     _methodOverviewView.ClearOverview();
+    _fieldListView.ClearFields();
     ShowOverviewView(_overviewText);
     _classDependencyView.ClearGraph();
     _projectDependencyView.ClearGraph();
@@ -1031,6 +1072,8 @@ public sealed class MainForm : Form
   }
 
   private sealed record TypeNodeContext(ProjectStructure Project, TypeStructure Type);
+
+  private sealed record FieldsNodeContext(ProjectStructure Project, TypeStructure Type);
 
   private sealed record FieldNodeContext(ProjectStructure Project, TypeStructure Type, FieldStructure Field);
 
