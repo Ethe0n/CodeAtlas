@@ -55,10 +55,26 @@ internal sealed class ClassOverviewView : UserControl
         properties.Length,
         type.UiControls.Count,
         type.UiEventHandlers.Count));
-    AddContent(CreateMethodsSection(methods));
-    AddContent(CreateFieldsSection(fields));
-    AddContent(CreatePropertiesSection(properties));
-    AddContent(CreateUserInterfaceSection(type.UiControls, type.UiEventHandlers));
+    if (methods.Length > 0)
+    {
+      AddContent(CreateMethodsSection(methods));
+    }
+
+    if (fields.Length > 0)
+    {
+      AddContent(CreateFieldsSection(fields));
+    }
+
+    if (properties.Length > 0)
+    {
+      AddContent(CreatePropertiesSection(properties));
+    }
+
+    if (type.UiControls.Count > 0 || type.UiEventHandlers.Count > 0)
+    {
+      AddContent(CreateUserInterfaceSection(type.UiControls, type.UiEventHandlers));
+    }
+
     AddContent(CreateSourcesSection(type.FilePaths));
 
     _content.ResumeLayout(performLayout: true);

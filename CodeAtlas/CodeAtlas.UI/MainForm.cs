@@ -433,6 +433,11 @@ public sealed class MainForm : Form
 
   private static void AddFieldNodes(TreeNode typeNode, ProjectStructure project, TypeStructure type)
   {
+    if (type.Fields.Count == 0)
+    {
+      return;
+    }
+
     var groupNode = new TreeNode($"Fields ({type.Fields.Count})")
     {
       Tag = new FieldsNodeContext(project, type)
@@ -442,6 +447,11 @@ public sealed class MainForm : Form
 
   private static void AddPropertyNodes(TreeNode typeNode, ProjectStructure project, TypeStructure type)
   {
+    if (type.Properties.Count == 0)
+    {
+      return;
+    }
+
     var groupNode = new TreeNode($"Properties ({type.Properties.Count})")
     {
       Tag = new PropertiesNodeContext(project, type)
@@ -454,6 +464,11 @@ public sealed class MainForm : Form
       ProjectStructure project,
       TypeStructure type)
   {
+    if (type.UiControls.Count == 0 && type.UiEventHandlers.Count == 0)
+    {
+      return;
+    }
+
     var groupNode = new TreeNode(
         $"User Interface ({type.UiControls.Count} controls, {type.UiEventHandlers.Count} events)")
     {
@@ -465,6 +480,11 @@ public sealed class MainForm : Form
   private static void AddMethodNodes(TreeNode typeNode, ProjectStructure project, TypeStructure type)
   {
     var methods = type.Methods.Where(method => !method.IsGenerated).ToArray();
+    if (methods.Length == 0)
+    {
+      return;
+    }
+
     var groupNode = new TreeNode($"Methods ({methods.Length})") { Tag = type.Methods };
     typeNode.Nodes.Add(groupNode);
 
