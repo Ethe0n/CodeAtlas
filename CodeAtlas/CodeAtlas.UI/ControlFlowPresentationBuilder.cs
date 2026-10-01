@@ -104,7 +104,10 @@ internal sealed class ControlFlowPresentationBuilder
           testBlockIds.Min(),
           SegmentIndex: 0,
           Kind: "SelectCase",
-          Text: selectorStructure.Text);
+          Text: selectorStructure.Text)
+      {
+        ControlStructureGroupId = group.Key
+      };
 
       nodes.RemoveAll(node => removedNodeIds.Contains(node.Id));
       edges.RemoveAll(edge =>
@@ -154,7 +157,10 @@ internal sealed class ControlFlowPresentationBuilder
             sourceNode.Id,
             SegmentIndex: 0,
             Kind: "Condition",
-            Text: branchCondition);
+            Text: branchCondition)
+        {
+          ControlStructureGroupId = group.Key
+        };
         nodes.Add(caseNode);
 
         AddEdgeIfMissing(
@@ -283,7 +289,10 @@ internal sealed class ControlFlowPresentationBuilder
         rawNode.Id,
         segmentIndex,
         kind,
-        text);
+        text)
+    {
+      ControlStructureGroupId = rawNode.ControlStructure?.GroupId
+    };
   }
 
   private static string[] SplitOperationTexts(string text)
@@ -417,7 +426,10 @@ internal sealed record ControlFlowPresentationNode(
     int SourceBlockId,
     int SegmentIndex,
     string Kind,
-    string Text);
+    string Text)
+{
+  public string? ControlStructureGroupId { get; init; }
+}
 
 internal sealed record ControlFlowPresentationEdge(
     string From,

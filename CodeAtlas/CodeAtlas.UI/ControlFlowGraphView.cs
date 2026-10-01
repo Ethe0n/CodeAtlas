@@ -111,7 +111,65 @@ public sealed class ControlFlowGraphView : UserControl
 
     foreach (var merge in selectCaseMerges)
     {
-      var busPoints = merge.BusPointIds
+      foreach (var lane in merge.Lanes)
+      {
+        var localBusPoints = lane.LocalBusPointIds
+            .Select(graph.FindNode)
+            .Where(node => node is not null)
+            .Select(node => node!)
+            .ToArray();
+        if (localBusPoints.Length > 1)
+        {
+          graph.LayerConstraints.PinNodesToSameLayer(localBusPoints);
+          for (var index = 0; index < localBusPoints.Length - 1; index++)
+          {
+            graph.LayerConstraints.AddLeftRightConstraint(
+                localBusPoints[index],
+                localBusPoints[index + 1]);
+          }
+        }
+
+        foreach (var input in lane.Inputs)
+        {
+          var source = graph.FindNode(input.Edge.From);
+          var tap = graph.FindNode(input.TapId);
+          if (source is not null && tap is not null)
+          {
+            graph.LayerConstraints.AddUpDownVerticalConstraint(source, tap);
+          }
+        }
+
+        var caseNode = graph.FindNode(lane.CaseNodeId);
+        var laneOutput = graph.FindNode(lane.OutputId);
+        var globalTap = graph.FindNode(lane.GlobalTapId);
+        var firstSuccessors = presentation.Edges
+            .Where(edge =>
+                edge.From == lane.CaseNodeId &&
+                !edge.IsBackEdge &&
+                !(edge.To == merge.TargetId &&
+                    lane.Inputs.Any(input => input.Edge.From == lane.CaseNodeId)))
+            .Select(edge => graph.FindNode(edge.To))
+            .Where(node => node is not null)
+            .Select(node => node!)
+            .Distinct()
+            .ToArray();
+        if (caseNode is not null && firstSuccessors.Length == 1)
+        {
+          graph.LayerConstraints.AddUpDownVerticalConstraint(caseNode, firstSuccessors[0]);
+        }
+
+        if (caseNode is not null && globalTap is not null)
+        {
+          graph.LayerConstraints.AddUpDownVerticalConstraint(caseNode, globalTap);
+        }
+
+        if (laneOutput is not null && globalTap is not null)
+        {
+          graph.LayerConstraints.AddUpDownVerticalConstraint(laneOutput, globalTap);
+        }
+      }
+
+      var busPoints = merge.GlobalBusPointIds
           .Select(graph.FindNode)
           .Where(node => node is not null)
           .Select(node => node!)
@@ -124,26 +182,6 @@ public sealed class ControlFlowGraphView : UserControl
           graph.LayerConstraints.AddLeftRightConstraint(
               busPoints[index],
               busPoints[index + 1]);
-        }
-      }
-
-      foreach (var branch in merge.Branches)
-      {
-        for (var index = 0; index < branch.PathNodeIds.Count - 1; index++)
-        {
-          var pathSource = graph.FindNode(branch.PathNodeIds[index]);
-          var pathTarget = graph.FindNode(branch.PathNodeIds[index + 1]);
-          if (pathSource is not null && pathTarget is not null)
-          {
-            graph.LayerConstraints.AddUpDownVerticalConstraint(pathSource, pathTarget);
-          }
-        }
-
-        var input = graph.FindNode(branch.InputId);
-        var tap = graph.FindNode(branch.TapId);
-        if (input is not null && tap is not null)
-        {
-          graph.LayerConstraints.AddUpDownVerticalConstraint(input, tap);
         }
       }
 
@@ -321,7 +359,9 @@ public sealed class ControlFlowGraphView : UserControl
   {
     var fanouts = new List<SelectCaseFanout>();
 
-    foreach (var selector in presentation.Nodes.Where(node => node.Kind == "SelectCase"))
+    foreach (var selector in presentation.Nodes.Where(node =>
+        node.Kind == "SelectCase" &&
+        !string.IsNullOrWhiteSpace(node.ControlStructureGroupId)))
     {
       var targets = presentation.Edges
           .Where(edge => edge.From == selector.Id && edge.Kind == "ControlStructureLink")
@@ -359,6 +399,7 @@ public sealed class ControlFlowGraphView : UserControl
 
       fanouts.Add(new SelectCaseFanout(
           selector.Id,
+          selector.ControlStructureGroupId!,
           junctionId,
           busPointIds,
           branches));
@@ -373,188 +414,178 @@ public sealed class ControlFlowGraphView : UserControl
       IReadOnlyList<SelectCaseFanout> fanouts)
   {
     var merges = new List<SelectCaseMerge>();
+    var nodesById = presentation.Nodes.ToDictionary(node => node.Id, StringComparer.Ordinal);
 
     foreach (var fanout in fanouts)
     {
-      var reachableByBranch = fanout.Branches
-          .Select(branch => GetReachableDistances(branch.TargetId, presentation.Edges))
-          .ToArray();
-      var commonNodeIds = reachableByBranch
-          .Select(distances => distances.Keys.AsEnumerable())
-          .Aggregate((common, nodeIds) => common.Intersect(nodeIds, StringComparer.Ordinal))
-          .Where(nodeId =>
-              nodeId != fanout.SelectorId &&
-              fanout.Branches.All(branch => branch.TargetId != nodeId))
-          .OrderBy(nodeId => reachableByBranch.Sum(distances => distances[nodeId]))
-          .ThenBy(nodeId => reachableByBranch.Max(distances => distances[nodeId]));
+      var groupNodeIds = presentation.Nodes
+          .Where(node => string.Equals(
+              node.ControlStructureGroupId,
+              fanout.GroupId,
+              StringComparison.Ordinal))
+          .Select(node => node.Id)
+          .ToHashSet(StringComparer.Ordinal);
+      var exitCandidates = new List<SelectCaseExitCandidate>();
 
-      foreach (var commonNodeId in commonNodeIds)
+      foreach (var branch in fanout.Branches)
       {
-        var incomingEdges = presentation.Edges
-            .Where(edge => edge.To == commonNodeId && !edge.IsBackEdge)
+        var branchNodeIds = GetReachableWithinGroup(
+            branch.TargetId,
+            groupNodeIds,
+            presentation.Edges);
+        var exitEdges = presentation.Edges
+            .Where(edge =>
+                branchNodeIds.Contains(edge.From) &&
+                !groupNodeIds.Contains(edge.To) &&
+                !edge.IsBackEdge &&
+                edge.Kind != "Return" &&
+                (!nodesById.TryGetValue(edge.To, out var targetNode) || targetNode.Kind != "Exit"))
+            .Distinct()
             .ToArray();
-        var mergeInputs = new List<string>();
-        var isValidMerge = true;
-
-        for (var branchIndex = 0; branchIndex < reachableByBranch.Length; branchIndex++)
+        if (exitEdges.Length > 0)
         {
-          var branchDistances = reachableByBranch[branchIndex];
-          var exclusiveEdges = incomingEdges
-              .Where(edge =>
-                  branchDistances.ContainsKey(edge.From) &&
-                  reachableByBranch
-                      .Where((_, index) => index != branchIndex)
-                      .All(otherDistances => !otherDistances.ContainsKey(edge.From)))
-              .Where(edge =>
-                  edge.Kind is "FallThrough" or "Return" &&
-                  string.IsNullOrWhiteSpace(edge.DisplayLabel))
-              .ToArray();
-          if (exclusiveEdges.Length != 1)
-          {
-            isValidMerge = false;
-            break;
-          }
+          exitCandidates.Add(new SelectCaseExitCandidate(branch.TargetId, exitEdges));
+        }
+      }
 
-          mergeInputs.Add(exclusiveEdges[0].From);
+      if (exitCandidates.Count < 2)
+      {
+        continue;
+      }
+
+      var commonTargetIds = exitCandidates
+          .Select(candidate => candidate.Edges
+              .Select(edge => edge.To)
+              .Distinct(StringComparer.Ordinal))
+          .Aggregate((common, targets) => common.Intersect(targets, StringComparer.Ordinal))
+          .ToHashSet(StringComparer.Ordinal);
+      var targetId = presentation.Nodes
+          .Select(node => node.Id)
+          .FirstOrDefault(commonTargetIds.Contains);
+      if (targetId is null)
+      {
+        continue;
+      }
+
+      var activeCandidates = exitCandidates
+          .Select(candidate => candidate with
+          {
+            Edges = candidate.Edges
+                .Where(edge => edge.To == targetId)
+                .ToArray()
+          })
+          .Where(candidate => candidate.Edges.Count > 0)
+          .ToArray();
+      if (activeCandidates.Length < 2)
+      {
+        continue;
+      }
+
+      var junctionId = $"{fanout.SelectorId}_merge_junction";
+      var globalBusPointIds = new List<string>();
+      var globalTapIds = new List<string>();
+      var middleIndex = activeCandidates.Length / 2;
+
+      for (var index = 0; index < activeCandidates.Length; index++)
+      {
+        if (activeCandidates.Length % 2 == 0 && index == middleIndex)
+        {
+          globalBusPointIds.Add(junctionId);
         }
 
-        if (!isValidMerge || mergeInputs.Distinct(StringComparer.Ordinal).Count() != mergeInputs.Count)
+        var tapId = activeCandidates.Length % 2 == 1 && index == middleIndex
+            ? junctionId
+            : $"{fanout.SelectorId}_merge_tap_{index}";
+        globalTapIds.Add(tapId);
+        globalBusPointIds.Add(tapId);
+      }
+
+      var lanes = new List<SelectCaseMergeLane>();
+      for (var laneIndex = 0; laneIndex < activeCandidates.Length; laneIndex++)
+      {
+        var candidate = activeCandidates[laneIndex];
+        var globalTapId = globalTapIds[laneIndex];
+        if (candidate.Edges.Count == 1)
         {
+          lanes.Add(new SelectCaseMergeLane(
+              candidate.CaseNodeId,
+              candidate.Edges[0].From,
+              globalTapId,
+              Array.Empty<string>(),
+              [new SelectCaseMergeInput(candidate.Edges[0], globalTapId)]));
           continue;
         }
 
-        var junctionId = $"{fanout.SelectorId}_merge_junction";
-        var busPointIds = new List<string>();
-        var branches = new List<SelectCaseMergeBranch>();
-        var middleIndex = mergeInputs.Count / 2;
-
-        for (var index = 0; index < mergeInputs.Count; index++)
+        var localJunctionId = $"{fanout.SelectorId}_local_merge_{laneIndex}";
+        var localBusPointIds = new List<string>();
+        var inputs = new List<SelectCaseMergeInput>();
+        var localMiddleIndex = candidate.Edges.Count / 2;
+        for (var inputIndex = 0; inputIndex < candidate.Edges.Count; inputIndex++)
         {
-          if (mergeInputs.Count % 2 == 0 && index == middleIndex)
+          if (candidate.Edges.Count % 2 == 0 && inputIndex == localMiddleIndex)
           {
-            busPointIds.Add(junctionId);
+            localBusPointIds.Add(localJunctionId);
           }
 
-          var tapId = mergeInputs.Count % 2 == 1 && index == middleIndex
-              ? junctionId
-              : $"{fanout.SelectorId}_merge_tap_{index}";
-          busPointIds.Add(tapId);
-          branches.Add(new SelectCaseMergeBranch(
-              mergeInputs[index],
-              tapId,
-              GetLinearPath(
-                  fanout.Branches[index].TargetId,
-                  mergeInputs[index],
-                  presentation.Edges)));
+          var localTapId = candidate.Edges.Count % 2 == 1 && inputIndex == localMiddleIndex
+              ? localJunctionId
+              : $"{fanout.SelectorId}_local_merge_{laneIndex}_tap_{inputIndex}";
+          localBusPointIds.Add(localTapId);
+          inputs.Add(new SelectCaseMergeInput(candidate.Edges[inputIndex], localTapId));
         }
 
-        foreach (var pointId in busPointIds.Distinct(StringComparer.Ordinal))
-        {
-          ConfigureInvisibleRoutingNode(graph.AddNode(pointId));
-        }
-
-        merges.Add(new SelectCaseMerge(
-            junctionId,
-            commonNodeId,
-            busPointIds,
-            branches));
-        break;
+        lanes.Add(new SelectCaseMergeLane(
+            candidate.CaseNodeId,
+            localJunctionId,
+            globalTapId,
+            localBusPointIds,
+            inputs));
       }
+
+      foreach (var pointId in globalBusPointIds
+          .Concat(lanes.SelectMany(lane => lane.LocalBusPointIds))
+          .Distinct(StringComparer.Ordinal))
+      {
+        ConfigureInvisibleRoutingNode(graph.AddNode(pointId));
+      }
+
+      merges.Add(new SelectCaseMerge(
+          junctionId,
+          targetId,
+          globalBusPointIds,
+          lanes));
     }
 
     return merges;
   }
 
-  private static Dictionary<string, int> GetReachableDistances(
+  private static HashSet<string> GetReachableWithinGroup(
       string startNodeId,
+      IReadOnlySet<string> groupNodeIds,
       IReadOnlyList<ControlFlowPresentationEdge> edges)
   {
-    var distances = new Dictionary<string, int>(StringComparer.Ordinal)
-    {
-      [startNodeId] = 0
-    };
+    var reachable = new HashSet<string>(StringComparer.Ordinal) { startNodeId };
     var pending = new Queue<string>();
     pending.Enqueue(startNodeId);
 
     while (pending.Count > 0)
     {
       var current = pending.Dequeue();
-      foreach (var edge in edges.Where(edge => edge.From == current && !edge.IsBackEdge))
+      foreach (var edge in edges.Where(edge =>
+          edge.From == current &&
+          !edge.IsBackEdge &&
+          groupNodeIds.Contains(edge.To)))
       {
-        if (distances.ContainsKey(edge.To))
+        if (!reachable.Add(edge.To))
         {
           continue;
         }
 
-        distances.Add(edge.To, distances[current] + 1);
         pending.Enqueue(edge.To);
       }
     }
 
-    return distances;
-  }
-
-  private static IReadOnlyList<string> GetLinearPath(
-      string startNodeId,
-      string targetNodeId,
-      IReadOnlyList<ControlFlowPresentationEdge> edges)
-  {
-    var path = new List<string> { startNodeId };
-    var visited = new HashSet<string>(StringComparer.Ordinal) { startNodeId };
-    var current = startNodeId;
-
-    while (current != targetNodeId)
-    {
-      var nextNodeIds = edges
-          .Where(edge => edge.From == current && !edge.IsBackEdge)
-          .Select(edge => edge.To)
-          .Distinct(StringComparer.Ordinal)
-          .Where(nodeId => CanReach(nodeId, targetNodeId, edges))
-          .ToArray();
-      if (nextNodeIds.Length != 1 || !visited.Add(nextNodeIds[0]))
-      {
-        return Array.Empty<string>();
-      }
-
-      current = nextNodeIds[0];
-      path.Add(current);
-    }
-
-    return path;
-  }
-
-  private static bool CanReach(
-      string startNodeId,
-      string targetNodeId,
-      IReadOnlyList<ControlFlowPresentationEdge> edges)
-  {
-    if (startNodeId == targetNodeId)
-    {
-      return true;
-    }
-
-    var visited = new HashSet<string>(StringComparer.Ordinal) { startNodeId };
-    var pending = new Queue<string>();
-    pending.Enqueue(startNodeId);
-
-    while (pending.Count > 0)
-    {
-      var current = pending.Dequeue();
-      foreach (var edge in edges.Where(edge => edge.From == current && !edge.IsBackEdge))
-      {
-        if (edge.To == targetNodeId)
-        {
-          return true;
-        }
-
-        if (visited.Add(edge.To))
-        {
-          pending.Enqueue(edge.To);
-        }
-      }
-    }
-
-    return false;
+    return reachable;
   }
 
   private static void ConfigureInvisibleRoutingNode(Node node)
@@ -595,16 +626,44 @@ public sealed class ControlFlowGraphView : UserControl
       Graph graph,
       SelectCaseMerge merge)
   {
-    foreach (var branch in merge.Branches)
+    foreach (var lane in merge.Lanes)
     {
-      ConfigureMergeRoutingEdge(graph.AddEdge(branch.InputId, branch.TapId), false);
+      foreach (var input in lane.Inputs)
+      {
+        var inputEdge = graph.AddEdge(
+            input.Edge.From,
+            FormatEdgeLabel(input.Edge),
+            input.TapId);
+        if (input.Edge.Kind is "ConditionalTrue" or "ConditionalFalse" or "Conditional")
+        {
+          ConfigureEdge(inputEdge, input.Edge);
+        }
+        else
+        {
+          ConfigureMergeRoutingEdge(inputEdge, false);
+        }
+      }
+
+      for (var index = 0; index < lane.LocalBusPointIds.Count - 1; index++)
+      {
+        ConfigureMergeRoutingEdge(graph.AddEdge(
+            lane.LocalBusPointIds[index],
+            lane.LocalBusPointIds[index + 1]), false);
+      }
+
+      if (lane.LocalBusPointIds.Count > 0)
+      {
+        ConfigureMergeRoutingEdge(graph.AddEdge(
+            lane.OutputId,
+            lane.GlobalTapId), false);
+      }
     }
 
-    for (var index = 0; index < merge.BusPointIds.Count - 1; index++)
+    for (var index = 0; index < merge.GlobalBusPointIds.Count - 1; index++)
     {
       ConfigureMergeRoutingEdge(graph.AddEdge(
-          merge.BusPointIds[index],
-          merge.BusPointIds[index + 1]), false);
+          merge.GlobalBusPointIds[index],
+          merge.GlobalBusPointIds[index + 1]), false);
     }
 
     ConfigureMergeRoutingEdge(graph.AddEdge(merge.JunctionId, merge.TargetId), true);
@@ -634,7 +693,8 @@ public sealed class ControlFlowGraphView : UserControl
   {
     return merges.Any(merge =>
         edge.To == merge.TargetId &&
-        merge.Branches.Any(branch => branch.InputId == edge.From));
+        merge.Lanes.Any(lane =>
+            lane.Inputs.Any(input => input.Edge.From == edge.From)));
   }
 
   private static void ConfigureNode(Node graphNode, ControlFlowPresentationNode node)
@@ -748,6 +808,7 @@ public sealed class ControlFlowGraphView : UserControl
 
   private sealed record SelectCaseFanout(
       string SelectorId,
+      string GroupId,
       string JunctionId,
       IReadOnlyList<string> BusPointIds,
       IReadOnlyList<SelectCaseFanoutBranch> Branches);
@@ -759,11 +820,21 @@ public sealed class ControlFlowGraphView : UserControl
   private sealed record SelectCaseMerge(
       string JunctionId,
       string TargetId,
-      IReadOnlyList<string> BusPointIds,
-      IReadOnlyList<SelectCaseMergeBranch> Branches);
+      IReadOnlyList<string> GlobalBusPointIds,
+      IReadOnlyList<SelectCaseMergeLane> Lanes);
 
-  private sealed record SelectCaseMergeBranch(
-      string InputId,
-      string TapId,
-      IReadOnlyList<string> PathNodeIds);
+  private sealed record SelectCaseMergeLane(
+      string CaseNodeId,
+      string OutputId,
+      string GlobalTapId,
+      IReadOnlyList<string> LocalBusPointIds,
+      IReadOnlyList<SelectCaseMergeInput> Inputs);
+
+  private sealed record SelectCaseMergeInput(
+      ControlFlowPresentationEdge Edge,
+      string TapId);
+
+  private sealed record SelectCaseExitCandidate(
+      string CaseNodeId,
+      IReadOnlyList<ControlFlowPresentationEdge> Edges);
 }
