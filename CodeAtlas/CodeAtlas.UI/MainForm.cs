@@ -16,6 +16,7 @@ public sealed class MainForm : Form
   private readonly System.Windows.Forms.Label _relationsUnavailableLabel = CreateUnavailableLabel("Relations are not available for this selection.");
   private readonly System.Windows.Forms.Label _flowUnavailableLabel = CreateUnavailableLabel("Control flow is available for methods only.");
   private readonly TextBox _overviewText = CreateReadOnlyTextBox();
+  private readonly ClassOverviewView _classOverviewView = new();
   private readonly MethodOverviewView _methodOverviewView = new();
   private readonly FieldListView _fieldListView = new();
   private readonly CallGraphView _callGraphView = new();
@@ -55,6 +56,8 @@ public sealed class MainForm : Form
     _callGraphView.MethodSelected += SelectMethodNodeBySymbolId;
     _classDependencyView.TypeSelected += SelectTypeNodeBySymbolId;
     _projectDependencyView.TypeSelected += SelectTypeNodeBySymbolId;
+    _classOverviewView.MethodSelected += SelectMethodNodeBySymbolId;
+    _classOverviewView.FieldSelected += ShowFieldBySymbolId;
     _fieldListView.FieldActivated += ShowFieldFromList;
   }
 
@@ -509,78 +512,8 @@ public sealed class MainForm : Form
 
   private void ShowClassOverview(TypeNodeContext context)
   {
-    var type = context.Type;
-    var methods = type.Methods
-        .Where(method => !method.IsGenerated)
-        .ToArray();
-    var fields = type.Fields
-        .Where(field => !field.IsGenerated)
-        .ToArray();
-    var properties = type.Properties
-        .Where(property => !property.IsGenerated)
-        .ToArray();
-    var lines = new List<string>
-        {
-            type.Name,
-            new string('-', Math.Max(24, type.Name.Length)),
-            string.Empty,
-            "Type",
-            $"Name            {type.FullName}",
-            $"Kind            {FormatOptional(type.Kind)}",
-            $"Accessibility   {FormatOptional(type.Accessibility)}",
-            $"Partial         {FormatBoolean(type.FilePaths.Count > 1)}",
-            $"Base Type       {FormatOptional(type.BaseType)}",
-            string.Empty,
-            "Source"
-        };
-
-    if (type.FilePaths.Count == 0)
-    {
-      lines.Add("(unknown)");
-    }
-    else
-    {
-      lines.AddRange(type.FilePaths.Select(path => Path.GetFileName(path)));
-    }
-
-    lines.AddRange(
-    [
-        string.Empty,
-            "Structure",
-            $"Fields            {fields.Length}",
-            $"Properties        {properties.Length}",
-            $"Methods           {methods.Length}",
-            $"UI Controls       {type.UiControls.Count}",
-            $"UI Event Handlers {type.UiEventHandlers.Count}",
-            string.Empty,
-            "Methods"
-    ]);
-
-    AppendIndentedList(lines, methods.Select(FormatMethodSignature));
-
-    lines.AddRange(
-    [
-        string.Empty,
-            "Fields"
-    ]);
-    AppendIndentedList(lines, fields.Select(field => $"{field.Name} : {field.Type}"));
-
-    lines.AddRange(
-    [
-        string.Empty,
-            "UI Controls"
-    ]);
-    AppendIndentedList(lines, type.UiControls.Select(control => $"{control.Name} : {ShortTypeName(control.Type)}"));
-
-    lines.AddRange(
-    [
-        string.Empty,
-            "UI Event Handlers"
-    ]);
-    AppendIndentedList(lines, type.UiEventHandlers.Select(handler =>
-        $"{handler.ControlName}.{handler.EventName} -> {handler.HandlerMethodName}"));
-
-    _overviewText.Text = string.Join(Environment.NewLine, lines);
+    ShowOverviewView(_classOverviewView);
+    _classOverviewView.ShowType(context.Type);
   }
 
   private void ShowProjectOverview(ProjectStructure project)
@@ -767,6 +700,31 @@ public sealed class MainForm : Form
     _detailsTabs.SelectedTab = _overviewTab;
   }
 
+  private void ShowFieldBySymbolId(string fieldSymbolId)
+  {
+    if (_solution is null)
+    {
+      return;
+    }
+
+    foreach (var project in _solution.Projects)
+    {
+      foreach (var type in project.Types)
+      {
+        var field = type.Fields.FirstOrDefault(candidate =>
+            string.Equals(candidate.SymbolId, fieldSymbolId, StringComparison.Ordinal));
+        if (field is null)
+        {
+          continue;
+        }
+
+        ShowFieldOverview(new FieldNodeContext(project, type, field));
+        _detailsTabs.SelectedTab = _overviewTab;
+        return;
+      }
+    }
+  }
+
   private void ShowMethodOverview(MethodNodeContext context)
   {
     var method = context.Method;
@@ -922,6 +880,7 @@ public sealed class MainForm : Form
     _exportFlowDiagramMenuItem.Enabled = false;
     _activeFieldsContext = null;
     _overviewText.Clear();
+    _classOverviewView.ClearOverview();
     _methodOverviewView.ClearOverview();
     _fieldListView.ClearFields();
     ShowOverviewView(_overviewText);
