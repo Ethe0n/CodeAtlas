@@ -19,6 +19,7 @@ public sealed class MainForm : Form
   private readonly ClassOverviewView _classOverviewView = new();
   private readonly MethodOverviewView _methodOverviewView = new();
   private readonly FieldListView _fieldListView = new();
+  private readonly PropertyListView _propertyListView = new();
   private readonly CallGraphView _callGraphView = new();
   private readonly ControlFlowGraphView _controlFlowGraphView = new();
   private readonly ClassDependencyView _classDependencyView = new();
@@ -39,6 +40,7 @@ public sealed class MainForm : Form
   private SolutionStructure? _solution;
   private CancellationTokenSource? _analysisCancellation;
   private FieldsNodeContext? _activeFieldsContext;
+  private PropertiesNodeContext? _activePropertiesContext;
   private bool _initialSplitterDistanceApplied;
 
   public MainForm()
@@ -59,6 +61,7 @@ public sealed class MainForm : Form
     _classOverviewView.MethodSelected += SelectMethodNodeBySymbolId;
     _classOverviewView.FieldSelected += ShowFieldBySymbolId;
     _fieldListView.FieldActivated += ShowFieldFromList;
+    _propertyListView.PropertyActivated += ShowPropertyFromList;
   }
 
   protected override void OnShown(EventArgs e)
@@ -88,9 +91,18 @@ public sealed class MainForm : Form
     _projectExplorer.AfterSelect += (_, args) => ShowNodeDetails(args.Node);
     _projectExplorer.NodeMouseClick += (_, args) =>
     {
-      if (ReferenceEquals(_projectExplorer.SelectedNode, args.Node) &&
-          args.Node.Tag is FieldsNodeContext &&
+      if (!ReferenceEquals(_projectExplorer.SelectedNode, args.Node))
+      {
+        return;
+      }
+
+      if (args.Node.Tag is FieldsNodeContext &&
           !_overviewHost.Controls.Contains(_fieldListView))
+      {
+        ShowNodeDetails(args.Node);
+      }
+      else if (args.Node.Tag is PropertiesNodeContext &&
+               !_overviewHost.Controls.Contains(_propertyListView))
       {
         ShowNodeDetails(args.Node);
       }
@@ -399,7 +411,7 @@ public sealed class MainForm : Form
     parentNode.Nodes.Add(typeNode);
 
     AddFieldNodes(typeNode, project, type);
-    AddPropertyNodes(typeNode, type);
+    AddPropertyNodes(typeNode, project, type);
     AddUiControlNodes(typeNode, type);
     AddUiEventHandlerNodes(typeNode, type);
     AddMethodNodes(typeNode, project, type);
@@ -427,15 +439,13 @@ public sealed class MainForm : Form
     typeNode.Nodes.Add(groupNode);
   }
 
-  private static void AddPropertyNodes(TreeNode typeNode, TypeStructure type)
+  private static void AddPropertyNodes(TreeNode typeNode, ProjectStructure project, TypeStructure type)
   {
-    var groupNode = new TreeNode($"Properties ({type.Properties.Count})") { Tag = type.Properties };
-    typeNode.Nodes.Add(groupNode);
-
-    foreach (var property in type.Properties)
+    var groupNode = new TreeNode($"Properties ({type.Properties.Count})")
     {
-      groupNode.Nodes.Add(new TreeNode($"{property.Name} : {property.Type}") { Tag = property });
-    }
+      Tag = new PropertiesNodeContext(project, type)
+    };
+    typeNode.Nodes.Add(groupNode);
   }
 
   private static void AddUiControlNodes(TreeNode typeNode, TypeStructure type)
@@ -495,8 +505,14 @@ public sealed class MainForm : Form
       case FieldsNodeContext fieldsContext:
         ShowFieldsOverview(fieldsContext);
         break;
+      case PropertiesNodeContext propertiesContext:
+        ShowPropertiesOverview(propertiesContext);
+        break;
       case FieldNodeContext fieldContext:
         ShowFieldOverview(fieldContext);
+        break;
+      case PropertyNodeContext propertyContext:
+        ShowPropertyOverview(propertyContext);
         break;
       case MethodNodeContext methodContext:
         ShowMethodOverview(methodContext);
@@ -725,6 +741,55 @@ public sealed class MainForm : Form
     }
   }
 
+  private void ShowPropertiesOverview(PropertiesNodeContext context)
+  {
+    _activePropertiesContext = context;
+    _propertyListView.ShowProperties(context.Type.Properties);
+    ShowOverviewView(_propertyListView);
+  }
+
+  private void ShowPropertyFromList(PropertyStructure property)
+  {
+    if (_activePropertiesContext is null ||
+        !_activePropertiesContext.Type.Properties.Contains(property))
+    {
+      return;
+    }
+
+    ShowPropertyOverview(new PropertyNodeContext(
+        _activePropertiesContext.Project,
+        _activePropertiesContext.Type,
+        property));
+    _detailsTabs.SelectedTab = _overviewTab;
+  }
+
+  private void ShowPropertyOverview(PropertyNodeContext context)
+  {
+    ShowOverviewView(_overviewText);
+    var property = context.Property;
+    var lines = new List<string>
+    {
+      "Property",
+      $"Name            {property.Name}",
+      $"Type            {property.Type}",
+      $"Accessibility   {property.Accessibility}",
+      string.Empty,
+      "Owner",
+      $"Declaring Type  {context.Type.FullName}",
+      string.Empty,
+      "Declaration",
+      $"File            {property.FilePath ?? "(unknown)"}",
+      $"Line            {property.Span.StartLine}",
+      string.Empty,
+      "Modifiers",
+      $"Shared          {FormatBoolean(property.IsShared)}",
+      $"Readable        {FormatBoolean(!property.IsWriteOnly)}",
+      $"Writable        {FormatBoolean(!property.IsReadOnly)}"
+    };
+
+    _overviewText.Text = string.Join(Environment.NewLine, lines);
+  }
+
   private void ShowMethodOverview(MethodNodeContext context)
   {
     var method = context.Method;
@@ -879,10 +944,12 @@ public sealed class MainForm : Form
     _exportFlowImageMenuItem.Enabled = false;
     _exportFlowDiagramMenuItem.Enabled = false;
     _activeFieldsContext = null;
+    _activePropertiesContext = null;
     _overviewText.Clear();
     _classOverviewView.ClearOverview();
     _methodOverviewView.ClearOverview();
     _fieldListView.ClearFields();
+    _propertyListView.ClearProperties();
     ShowOverviewView(_overviewText);
     _classDependencyView.ClearGraph();
     _projectDependencyView.ClearGraph();
@@ -1045,7 +1112,11 @@ public sealed class MainForm : Form
 
   private sealed record FieldsNodeContext(ProjectStructure Project, TypeStructure Type);
 
+  private sealed record PropertiesNodeContext(ProjectStructure Project, TypeStructure Type);
+
   private sealed record FieldNodeContext(ProjectStructure Project, TypeStructure Type, FieldStructure Field);
+
+  private sealed record PropertyNodeContext(ProjectStructure Project, TypeStructure Type, PropertyStructure Property);
 
   private sealed record MethodNodeContext(ProjectStructure Project, TypeStructure Type, MethodStructure Method);
 }
