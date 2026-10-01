@@ -31,6 +31,7 @@ public sealed class MainForm : Form
   };
   private readonly ToolStripButton _cancelAnalysisButton = new("Cancel") { Visible = false };
   private readonly ToolStripMenuItem _openSolutionMenuItem = new("&Open Solution...");
+  private readonly ToolStripMenuItem _exportFlowImageMenuItem = new("Export Flow Image...") { Enabled = false };
   private readonly SplitContainer _mainSplitContainer = new();
 
   private SolutionStructure? _solution;
@@ -47,6 +48,7 @@ public sealed class MainForm : Form
 
     BuildLayout();
     _openSolutionMenuItem.Click += async (_, _) => await OpenSolutionAsync();
+    _exportFlowImageMenuItem.Click += (_, _) => _controlFlowGraphView.ExportImage(this);
     _cancelAnalysisButton.Click += (_, _) => CancelAnalysis();
     _callGraphView.MethodSelected += SelectMethodNodeBySymbolId;
     _classDependencyView.TypeSelected += SelectTypeNodeBySymbolId;
@@ -66,6 +68,8 @@ public sealed class MainForm : Form
     var menuStrip = new MenuStrip();
     var fileMenu = new ToolStripMenuItem("&File");
     fileMenu.DropDownItems.Add(_openSolutionMenuItem);
+    fileMenu.DropDownItems.Add(new ToolStripSeparator());
+    fileMenu.DropDownItems.Add(_exportFlowImageMenuItem);
     menuStrip.Items.Add(fileMenu);
     MainMenuStrip = menuStrip;
 
@@ -841,6 +845,7 @@ public sealed class MainForm : Form
     var controlFlow = context.Project.ControlFlows.FirstOrDefault(flow => flow.MethodId == context.Method.SymbolId);
     ShowFlowView(_controlFlowGraphView);
     _controlFlowGraphView.ShowGraph(controlFlow);
+    _exportFlowImageMenuItem.Enabled = _controlFlowGraphView.CanExport;
   }
 
   private void SelectMethodNodeBySymbolId(string methodSymbolId)
@@ -909,6 +914,7 @@ public sealed class MainForm : Form
 
   private void ClearDetails()
   {
+    _exportFlowImageMenuItem.Enabled = false;
     _activeFieldsContext = null;
     _overviewText.Clear();
     _methodOverviewView.ClearOverview();

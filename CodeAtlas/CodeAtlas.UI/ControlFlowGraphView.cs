@@ -2,12 +2,19 @@ using CodeAtlas.Roslyn.Models;
 using Microsoft.Msagl.Drawing;
 using Microsoft.Msagl.GraphViewerGdi;
 using Microsoft.Msagl.Layout.Layered;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.Drawing.Text;
 
 namespace CodeAtlas.UI;
 
 public sealed class ControlFlowGraphView : UserControl
 {
   private const bool ShowBlockIds = false;
+  private const int ExportMargin = 64;
+  private const int MaxExportWidth = 8_000;
+  private const int MaxExportHeight = 12_000;
+  private const long MaxExportPixels = 40_000_000;
 
   private readonly GViewer _viewer = new();
   private readonly ControlFlowPresentationBuilder _presentationBuilder = new();
@@ -316,6 +323,52 @@ public sealed class ControlFlowGraphView : UserControl
     BeginInvoke(new Action(FitGraphToViewport));
   }
 
+  public bool CanExport => _viewer.Graph?.GeometryGraph is not null;
+
+  public void ExportImage(IWin32Window owner)
+  {
+    var graph = _viewer.Graph;
+    if (graph?.GeometryGraph is null)
+    {
+      return;
+    }
+
+    using var dialog = new SaveFileDialog
+    {
+      AddExtension = true,
+      DefaultExt = "png",
+      FileName = $"{CreateSafeFileName(graph.Label?.Text)}_CFG.png",
+      Filter = "PNG Image (*.png)|*.png|SVG Vector Image (*.svg)|*.svg",
+      OverwritePrompt = true,
+      Title = "Export Control Flow"
+    };
+    if (dialog.ShowDialog(owner) != DialogResult.OK)
+    {
+      return;
+    }
+
+    try
+    {
+      if (string.Equals(Path.GetExtension(dialog.FileName), ".svg", StringComparison.OrdinalIgnoreCase))
+      {
+        ExportSvg(graph, dialog.FileName);
+      }
+      else
+      {
+        ExportPng(graph, dialog.FileName);
+      }
+    }
+    catch (Exception exception)
+    {
+      MessageBox.Show(
+          owner,
+          exception.Message,
+          "Export Control Flow",
+          MessageBoxButtons.OK,
+          MessageBoxIcon.Error);
+    }
+  }
+
   public void ClearGraph()
   {
     _viewer.Graph = null;
@@ -351,6 +404,129 @@ public sealed class ControlFlowGraphView : UserControl
         Padding = 8
       }
     };
+  }
+
+  private static void ExportPng(Graph graph, string filePath)
+  {
+    var size = CalculateExportSize(graph.GeometryGraph!.BoundingBox.Width, graph.GeometryGraph.BoundingBox.Height);
+    using var bitmap = new Bitmap(size.Width, size.Height, PixelFormat.Format32bppArgb);
+
+    using (var graphics = Graphics.FromImage(bitmap))
+    {
+      graphics.Clear(System.Drawing.Color.White);
+      graphics.SmoothingMode = SmoothingMode.AntiAlias;
+      graphics.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+
+      var renderer = new GraphRenderer(graph);
+      renderer.Render(
+          graphics,
+          new Rectangle(
+              ExportMargin,
+              ExportMargin,
+              size.Width - (ExportMargin * 2),
+              size.Height - (ExportMargin * 2)));
+    }
+
+    bitmap.Save(filePath, ImageFormat.Png);
+  }
+
+  private static void ExportSvg(Graph graph, string filePath)
+  {
+    var labels = GetGraphLabels(graph)
+        .Select(label => (Label: label, Text: label.Text))
+        .ToArray();
+
+    try
+    {
+      foreach (var label in labels)
+      {
+        label.Label.Text = EscapeSvgText(label.Text);
+      }
+
+      using var stream = File.Create(filePath);
+      var writer = new SvgGraphWriter(stream, graph);
+      writer.Write();
+    }
+    finally
+    {
+      foreach (var label in labels)
+      {
+        label.Label.Text = label.Text;
+      }
+    }
+  }
+
+  private static IEnumerable<Microsoft.Msagl.Drawing.Label> GetGraphLabels(Graph graph)
+  {
+    if (graph.Label is not null)
+    {
+      yield return graph.Label;
+    }
+
+    foreach (var node in graph.Nodes)
+    {
+      if (node.Label is not null)
+      {
+        yield return node.Label;
+      }
+    }
+
+    foreach (var edge in graph.Edges)
+    {
+      if (edge.Label is not null)
+      {
+        yield return edge.Label;
+      }
+    }
+  }
+
+  private static string EscapeSvgText(string text)
+  {
+    return text
+        .Replace("&", "&amp;", StringComparison.Ordinal)
+        .Replace("<", "&lt;", StringComparison.Ordinal)
+        .Replace(">", "&gt;", StringComparison.Ordinal);
+  }
+
+  private static Size CalculateExportSize(double graphWidth, double graphHeight)
+  {
+    graphWidth = Math.Max(1, graphWidth);
+    graphHeight = Math.Max(1, graphHeight);
+
+    var scale = Math.Max(2, 1_600 / Math.Max(graphWidth, graphHeight));
+    scale = Math.Min(scale, (MaxExportWidth - (ExportMargin * 2d)) / graphWidth);
+    scale = Math.Min(scale, (MaxExportHeight - (ExportMargin * 2d)) / graphHeight);
+
+    var width = CalculateExportDimension(graphWidth, scale, MaxExportWidth);
+    var height = CalculateExportDimension(graphHeight, scale, MaxExportHeight);
+    for (var attempt = 0; attempt < 8 && (long)width * height > MaxExportPixels; attempt++)
+    {
+      var pixelCount = (long)width * height;
+      scale *= Math.Sqrt(MaxExportPixels / (double)pixelCount) * 0.999;
+      width = CalculateExportDimension(graphWidth, scale, MaxExportWidth);
+      height = CalculateExportDimension(graphHeight, scale, MaxExportHeight);
+    }
+
+    return new Size(width, height);
+  }
+
+  private static int CalculateExportDimension(double graphDimension, double scale, int maximum)
+  {
+    return Math.Clamp(
+        (int)Math.Ceiling(graphDimension * scale) + (ExportMargin * 2),
+        ExportMargin * 2 + 1,
+        maximum);
+  }
+
+  private static string CreateSafeFileName(string? value)
+  {
+    var name = string.IsNullOrWhiteSpace(value) ? "ControlFlow" : value;
+    foreach (var invalidCharacter in Path.GetInvalidFileNameChars())
+    {
+      name = name.Replace(invalidCharacter, '_');
+    }
+
+    return name;
   }
 
   private static IReadOnlyList<SelectCaseFanout> CreateSelectCaseFanouts(
