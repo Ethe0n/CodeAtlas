@@ -74,7 +74,7 @@
         result = "High"
       Case Else
         result = "Other"
-        Debug.Print("case not found")s
+        Debug.Print("case not found")
     End Select
 
     Return result
