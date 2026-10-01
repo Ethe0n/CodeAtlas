@@ -26,3 +26,4 @@ CodeAtlas - VB(Visual Basic) .net code analyzer
 - [x] switch case의 case 분기 이후 if가 들어가면 branch가 꼬이는 문제
 - [ ] UI preview 작동 제대로 안 함
 - [ ] draw.io export 시 invalid data 오류 발생
+- [ ] project overview 시, 내용이 많으면 로딩 및 스크롤 시 렉 발생
