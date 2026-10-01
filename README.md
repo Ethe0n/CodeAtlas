@@ -27,3 +27,4 @@ CodeAtlas - VB(Visual Basic) .net code analyzer
 - [ ] UI preview 작동 제대로 안 함
 - [ ] draw.io export 시 invalid data 오류 발생
 - [ ] project overview, field table 등등 내용이 많으면 로딩 및 스크롤 시 렉 발생
+- [ ] 가끔 flow chart에서 main graph와 연결 안된 sub graph가 있음.
