@@ -321,8 +321,18 @@ public sealed class ControlFlowAnalyzer
             IBinaryOperation binary => $"{FormatExpression(binary.LeftOperand, captureValues)} {GetBinaryOperator(binary.OperatorKind)} {FormatExpression(binary.RightOperand, captureValues)}",
             ILocalReferenceOperation local => local.Local.Name,
             IParameterReferenceOperation parameter => parameter.Parameter.Name,
-            IFieldReferenceOperation field => field.Field.Name,
-            IPropertyReferenceOperation property => property.Property.Name,
+            IFieldReferenceOperation field => FormatMemberReference(
+                field.Instance,
+                field.Field.Name,
+                field.Syntax,
+                captureValues),
+            IPropertyReferenceOperation property => property.Arguments.Length > 0
+                ? FormatSyntax(property.Syntax)
+                : FormatMemberReference(
+                    property.Instance,
+                    property.Property.Name,
+                    property.Syntax,
+                    captureValues),
             IInvocationOperation invocation => FormatSyntax(invocation.Syntax),
             ILiteralOperation literal => literal.ConstantValue.HasValue
                 ? literal.ConstantValue.Value?.ToString() ?? "Nothing"
@@ -330,6 +340,33 @@ public sealed class ControlFlowAnalyzer
             IFlowCaptureReferenceOperation capture => FormatFlowCaptureReference(capture, captureValues),
             _ => FormatSyntax(operation.Syntax)
         };
+    }
+
+    private static string FormatMemberReference(
+        IOperation? instance,
+        string memberName,
+        SyntaxNode syntax,
+        IReadOnlyDictionary<object, string>? captureValues)
+    {
+        if (instance is null)
+        {
+            return syntax is MemberAccessExpressionSyntax
+                ? FormatSyntax(syntax)
+                : memberName;
+        }
+
+        if (instance is IInstanceReferenceOperation instanceReference &&
+            instanceReference.IsImplicit)
+        {
+            return memberName;
+        }
+
+        var instanceText = instance is IInstanceReferenceOperation
+            ? FormatSyntax(instance.Syntax)
+            : FormatExpression(instance, captureValues);
+        return string.IsNullOrWhiteSpace(instanceText)
+            ? memberName
+            : $"{instanceText}.{memberName}";
     }
 
     private static string FormatFlowCaptureReference(
