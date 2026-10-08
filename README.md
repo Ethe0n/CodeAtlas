@@ -26,6 +26,7 @@ CodeAtlas - VB(Visual Basic) .net code analyzer
 - [x] 클래스 구조에서 {클래스 변수명}.{변수 명}이 있을 때 클래스 변수 명은 생략되고 변수 이름만 나와서 제대로 된 정보 전달 안됨(Ex. test.value = 10 으로 나와야 하는데 value = 10으로 나옴)
 - [x] switch case의 case 분기 이후 if가 들어가면 branch가 꼬이는 문제
 - [ ] UI preview 작동 제대로 안 함
-- [ ] draw.io export 시 invalid data 오류 발생
+- [ ] draw.io export 시 invalid data 오류 발생(웹 버전은 정상 작동)
 - [ ] project overview, field table 등등 내용이 많으면 로딩 및 스크롤 시 렉 발생
 - [ ] 가끔 flow chart에서 main graph와 연결 안된 sub graph가 있음. Using을 제대로 파싱 못하는 걸로 추측
+- [ ] 변수에 문자열 대입 시, 따옴표 생략되는 문제(Ex. [a = ""]이면 [a = ] 으로 표시됨)
