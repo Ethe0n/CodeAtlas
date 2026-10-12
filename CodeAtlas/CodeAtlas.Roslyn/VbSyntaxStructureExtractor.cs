@@ -21,8 +21,8 @@ public sealed class VbSyntaxStructureExtractor
 
         return root
             .DescendantNodes()
-            .OfType<ClassBlockSyntax>()
-            .Select(classBlock => ExtractClass(classBlock, semanticModel, filePath, projectDirectory, isDesignerDocument))
+            .OfType<TypeBlockSyntax>()
+            .Select(typeBlock => ExtractType(typeBlock, semanticModel, filePath, projectDirectory, isDesignerDocument))
             .Where(type => type is not null)
             .Select(type => type!)
             .ToArray();
@@ -100,8 +100,8 @@ public sealed class VbSyntaxStructureExtractor
 
         var declarationDependencies = root
             .DescendantNodes()
-            .OfType<ClassBlockSyntax>()
-            .SelectMany(classBlock => ExtractDeclarationTypeDependencies(classBlock, semanticModel, filePath, projectDirectory));
+            .OfType<TypeBlockSyntax>()
+            .SelectMany(typeBlock => ExtractDeclarationTypeDependencies(typeBlock, semanticModel, filePath, projectDirectory));
 
         var operationDependencies = root
             .DescendantNodes()
@@ -113,19 +113,19 @@ public sealed class VbSyntaxStructureExtractor
             .ToArray();
     }
 
-    private static TypeStructure? ExtractClass(
-        ClassBlockSyntax classBlock,
+    private static TypeStructure? ExtractType(
+        TypeBlockSyntax typeBlock,
         SemanticModel semanticModel,
         string? filePath,
         string? projectDirectory,
         bool isDesignerDocument)
     {
-        if (semanticModel.GetDeclaredSymbol(classBlock.ClassStatement) is not INamedTypeSymbol typeSymbol)
+        if (semanticModel.GetDeclaredSymbol(typeBlock.BlockStatement) is not INamedTypeSymbol typeSymbol)
         {
             return null;
         }
 
-        var extractedMethods = classBlock.Members
+        var extractedMethods = typeBlock.Members
             .OfType<MethodBlockSyntax>()
             .Select(methodBlock => ExtractMethod(methodBlock, semanticModel, filePath, projectDirectory, isDesignerDocument))
             .Where(method => method is not null)
@@ -145,7 +145,7 @@ public sealed class VbSyntaxStructureExtractor
         var fields = isDesignerDocument
             ? Array.Empty<FieldStructure>()
             : members
-                .SelectMany(member => ExtractFieldLikeMember(member, classBlock, filePath, projectDirectory))
+                .SelectMany(member => ExtractFieldLikeMember(member, typeBlock, filePath, projectDirectory))
                 .Where(field => !field.IsGenerated)
                 .ToArray();
 
@@ -153,25 +153,25 @@ public sealed class VbSyntaxStructureExtractor
             ? Array.Empty<PropertyStructure>()
             : members
                 .OfType<IPropertySymbol>()
-                .Select(property => ExtractProperty(property, classBlock, filePath, projectDirectory))
+                .Select(property => ExtractProperty(property, typeBlock, filePath, projectDirectory))
                 .Where(property => property is not null && !property.IsGenerated)
                 .Select(property => property!)
                 .ToArray();
 
         var uiControls = isDesignerDocument
-            ? ExtractUiControls(classBlock, semanticModel, filePath, projectDirectory).ToArray()
+            ? ExtractUiControls(typeBlock, semanticModel, filePath, projectDirectory).ToArray()
             : Array.Empty<UiControlInfo>();
         UiPreviewInfo? uiPreview = null;
         if (isDesignerDocument && uiControls.Length > 0)
         {
-            var designerInfo = ExtractUiDesignerInfo(classBlock, semanticModel, typeSymbol.Name, uiControls);
+            var designerInfo = ExtractUiDesignerInfo(typeBlock, semanticModel, typeSymbol.Name, uiControls);
             uiControls = uiControls
                 .Select(control => ApplyUiDesignerInfo(control, designerInfo))
                 .ToArray();
             uiPreview = designerInfo.Preview;
         }
 
-        var uiEventHandlers = classBlock.Members
+        var uiEventHandlers = typeBlock.Members
             .OfType<MethodBlockSyntax>()
             .SelectMany(methodBlock => ExtractUiEventHandlers(methodBlock, semanticModel, filePath, projectDirectory))
             .ToArray();
@@ -188,7 +188,7 @@ public sealed class VbSyntaxStructureExtractor
             ToAccessibility(typeSymbol.DeclaredAccessibility),
             typeSymbol.BaseType is null ? null : ToBaseTypeDisplayName(typeSymbol.BaseType),
             filePath is null ? Array.Empty<string>() : new[] { ToProjectRelativePath(filePath, projectDirectory) },
-            ToSpanInfo(classBlock.GetLocation().GetLineSpan()),
+            ToSpanInfo(typeBlock.GetLocation().GetLineSpan()),
             fields,
             properties,
             methods,
@@ -202,7 +202,7 @@ public sealed class VbSyntaxStructureExtractor
 
     private static IEnumerable<FieldStructure> ExtractFieldLikeMember(
         ISymbol member,
-        ClassBlockSyntax classBlock,
+        TypeBlockSyntax typeBlock,
         string? filePath,
         string? projectDirectory)
     {
@@ -214,7 +214,7 @@ public sealed class VbSyntaxStructureExtractor
                 yield break;
             }
 
-            var syntax = classBlock.SyntaxTree.GetRoot().FindNode(location.SourceSpan);
+            var syntax = typeBlock.SyntaxTree.GetRoot().FindNode(location.SourceSpan);
             var relativePath = ToProjectRelativePath(location.GetLineSpan().Path, projectDirectory);
             yield return new FieldStructure(
                 GetSymbolId(fieldSymbol),
@@ -238,7 +238,7 @@ public sealed class VbSyntaxStructureExtractor
                 yield break;
             }
 
-            var syntax = classBlock.SyntaxTree.GetRoot().FindNode(location.SourceSpan);
+            var syntax = typeBlock.SyntaxTree.GetRoot().FindNode(location.SourceSpan);
             var relativePath = ToProjectRelativePath(location.GetLineSpan().Path, projectDirectory);
             yield return new FieldStructure(
                 GetSymbolId(eventSymbol),
@@ -258,7 +258,7 @@ public sealed class VbSyntaxStructureExtractor
 
     private static PropertyStructure? ExtractProperty(
         IPropertySymbol propertySymbol,
-        ClassBlockSyntax classBlock,
+        TypeBlockSyntax typeBlock,
         string? filePath,
         string? projectDirectory)
     {
@@ -273,7 +273,7 @@ public sealed class VbSyntaxStructureExtractor
             return null;
         }
 
-        var syntax = classBlock.SyntaxTree.GetRoot().FindNode(location.SourceSpan);
+        var syntax = typeBlock.SyntaxTree.GetRoot().FindNode(location.SourceSpan);
         var relativePath = ToProjectRelativePath(location.GetLineSpan().Path, projectDirectory);
         return new PropertyStructure(
             propertySymbol.Name,
@@ -419,12 +419,12 @@ public sealed class VbSyntaxStructureExtractor
     }
 
     private static IEnumerable<TypeDependencyRelation> ExtractDeclarationTypeDependencies(
-        ClassBlockSyntax classBlock,
+        TypeBlockSyntax typeBlock,
         SemanticModel semanticModel,
         string? filePath,
         string? projectDirectory)
     {
-        if (semanticModel.GetDeclaredSymbol(classBlock.ClassStatement) is not INamedTypeSymbol typeSymbol)
+        if (semanticModel.GetDeclaredSymbol(typeBlock.BlockStatement) is not INamedTypeSymbol typeSymbol)
         {
             yield break;
         }
@@ -563,12 +563,12 @@ public sealed class VbSyntaxStructureExtractor
     }
 
     private static IEnumerable<UiControlInfo> ExtractUiControls(
-        ClassBlockSyntax classBlock,
+        TypeBlockSyntax typeBlock,
         SemanticModel semanticModel,
         string? filePath,
         string? projectDirectory)
     {
-        foreach (var fieldDeclaration in classBlock.Members.OfType<FieldDeclarationSyntax>())
+        foreach (var fieldDeclaration in typeBlock.Members.OfType<FieldDeclarationSyntax>())
         {
             foreach (var declarator in fieldDeclaration.Declarators)
             {
@@ -595,12 +595,12 @@ public sealed class VbSyntaxStructureExtractor
     }
 
     private static UiDesignerInfo ExtractUiDesignerInfo(
-        ClassBlockSyntax classBlock,
+        TypeBlockSyntax typeBlock,
         SemanticModel semanticModel,
         string typeName,
         IReadOnlyList<UiControlInfo> controls)
     {
-        var initializeComponent = classBlock.Members
+        var initializeComponent = typeBlock.Members
             .OfType<MethodBlockSyntax>()
             .FirstOrDefault(method => string.Equals(
                 method.SubOrFunctionStatement.Identifier.ValueText,
@@ -1020,7 +1020,7 @@ public sealed class VbSyntaxStructureExtractor
     {
         var attributeLists = syntax switch
         {
-            ClassBlockSyntax classBlock => classBlock.ClassStatement.AttributeLists,
+            TypeBlockSyntax typeBlock => typeBlock.BlockStatement.AttributeLists,
             FieldDeclarationSyntax field => field.AttributeLists,
             MethodBlockSyntax methodBlock => methodBlock.SubOrFunctionStatement.AttributeLists,
             MethodStatementSyntax method => method.AttributeLists,
