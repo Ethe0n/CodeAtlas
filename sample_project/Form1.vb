@@ -19,12 +19,17 @@
 
   End Sub
 
+  Public Sub LongParameterListTest(a As Integer, b As String, c As Integer, long_parameter_name_like_this As String, long_parameter_name_like_this_again As Integer)
+
+  End Sub
+
   Private Sub Button1_Click(sender As Object, e As EventArgs) Handles Button1.Click
     If True Then
       Debug.Print("Hello world")
     End If
 
     TestFunction()
+    LongParameterListTest(1, "2", 3, "", 5)
 
   End Sub
 

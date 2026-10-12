@@ -246,7 +246,9 @@ public sealed class CallGraphView : UserControl
   private static string ShortCallName(string displayName)
   {
     var parenIndex = displayName.IndexOf('(', StringComparison.Ordinal);
-    var signature = parenIndex >= 0 ? displayName[parenIndex..] : string.Empty;
+    var signature = parenIndex >= 0
+        ? WrapParameterList(displayName[parenIndex..])
+        : string.Empty;
     var namePart = parenIndex >= 0 ? displayName[..parenIndex] : displayName;
     var parts = namePart.Split('.', StringSplitOptions.RemoveEmptyEntries);
 
@@ -256,5 +258,60 @@ public sealed class CallGraphView : UserControl
     }
 
     return $"{namePart}{signature}";
+  }
+
+  private static string WrapParameterList(string signature)
+  {
+    if (signature.Length < 2 ||
+        signature[0] != '(' ||
+        signature[^1] != ')')
+    {
+      return signature;
+    }
+
+    var parameters = SplitTopLevelParameters(signature[1..^1]);
+    if (parameters.Count <= 2)
+    {
+      return signature;
+    }
+
+    var lines = parameters
+        .Chunk(2)
+        .Select(group => string.Join(", ", group));
+
+    return $"({Environment.NewLine}{string.Join($",{Environment.NewLine}", lines)})";
+  }
+
+  private static IReadOnlyList<string> SplitTopLevelParameters(string parameterList)
+  {
+    var parameters = new List<string>();
+    var start = 0;
+    var depth = 0;
+
+    for (var index = 0; index < parameterList.Length; index++)
+    {
+      switch (parameterList[index])
+      {
+        case '(':
+        case '[':
+        case '<':
+        case '{':
+          depth++;
+          break;
+        case ')':
+        case ']':
+        case '>':
+        case '}':
+          depth = Math.Max(0, depth - 1);
+          break;
+        case ',' when depth == 0:
+          parameters.Add(parameterList[start..index].Trim());
+          start = index + 1;
+          break;
+      }
+    }
+
+    parameters.Add(parameterList[start..].Trim());
+    return parameters;
   }
 }
