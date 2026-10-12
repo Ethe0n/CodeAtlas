@@ -76,7 +76,7 @@ public sealed class ControlFlowAnalyzer
         }
         else if (block.BranchValue is not null)
         {
-            condition = FormatExpression(block.BranchValue, captureValues);
+            condition = FormatConditionExpression(block.BranchValue, captureValues);
             textLines.Add($"Condition: {condition}");
         }
 
@@ -231,7 +231,9 @@ public sealed class ControlFlowAnalyzer
         BasicBlock block,
         IReadOnlyDictionary<object, string> captureValues)
     {
-        var condition = block.BranchValue is null ? null : FormatExpression(block.BranchValue, captureValues);
+        var condition = block.BranchValue is null
+            ? null
+            : FormatConditionExpression(block.BranchValue, captureValues);
 
         if (block.ConditionalSuccessor?.Destination is { } conditionalDestination)
         {
@@ -338,6 +340,90 @@ public sealed class ControlFlowAnalyzer
             IFlowCaptureReferenceOperation capture => FormatFlowCaptureReference(capture, captureValues),
             _ => FormatSyntax(operation.Syntax)
         };
+    }
+
+    private static string FormatConditionExpression(
+        IOperation operation,
+        IReadOnlyDictionary<object, string>? captureValues)
+    {
+        var candidate = UnwrapConversion(operation);
+        if (candidate is not IBinaryOperation binary ||
+            !IsLogicalOperator(binary.OperatorKind))
+        {
+            return FormatExpression(operation, captureValues);
+        }
+
+        var terms = new List<IOperation>();
+        CollectLogicalTerms(binary, binary.OperatorKind, terms);
+        if (terms.Count <= 2)
+        {
+            return FormatExpression(operation, captureValues);
+        }
+
+        var operatorText = GetBinaryOperator(binary.OperatorKind);
+        var lines = terms
+            .Chunk(2)
+            .Select((chunk, index) =>
+            {
+                var line = string.Join(
+                    $" {operatorText} ",
+                    chunk.Select(term => FormatLogicalTerm(
+                        term,
+                        binary.OperatorKind,
+                        captureValues)));
+                return index == 0 ? line : $"{operatorText} {line}";
+            });
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static void CollectLogicalTerms(
+        IOperation operation,
+        BinaryOperatorKind operatorKind,
+        ICollection<IOperation> terms)
+    {
+        var candidate = UnwrapConversion(operation);
+        if (candidate is IBinaryOperation binary && binary.OperatorKind == operatorKind)
+        {
+            CollectLogicalTerms(binary.LeftOperand, operatorKind, terms);
+            CollectLogicalTerms(binary.RightOperand, operatorKind, terms);
+            return;
+        }
+
+        terms.Add(candidate);
+    }
+
+    private static string FormatLogicalTerm(
+        IOperation operation,
+        BinaryOperatorKind parentOperatorKind,
+        IReadOnlyDictionary<object, string>? captureValues)
+    {
+        var text = FormatExpression(operation, captureValues);
+        var candidate = UnwrapConversion(operation);
+        return candidate is IBinaryOperation binary &&
+            IsLogicalOperator(binary.OperatorKind) &&
+            binary.OperatorKind != parentOperatorKind
+                ? $"({text})"
+                : text;
+    }
+
+    private static IOperation UnwrapConversion(IOperation operation)
+    {
+        while (operation is IConversionOperation conversion)
+        {
+            operation = conversion.Operand;
+        }
+
+        return operation;
+    }
+
+    private static bool IsLogicalOperator(BinaryOperatorKind operatorKind)
+    {
+        return operatorKind is
+            BinaryOperatorKind.And or
+            BinaryOperatorKind.Or or
+            BinaryOperatorKind.ConditionalAnd or
+            BinaryOperatorKind.ConditionalOr;
     }
 
     private static string FormatLiteral(ILiteralOperation literal)

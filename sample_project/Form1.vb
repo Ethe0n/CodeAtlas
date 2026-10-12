@@ -10,6 +10,15 @@
     Dim test_string = ""
   End Sub
 
+  Public Sub LongConditionTest()
+    Dim test_string = "hello"
+
+    If test_string = "hello" Or test_string = "world" Or test_string = "test" Or test_string = "world2" Then
+      Debug.Print("hello world")
+    End If
+
+  End Sub
+
   Private Sub Button1_Click(sender As Object, e As EventArgs) Handles Button1.Click
     If True Then
       Debug.Print("Hello world")
