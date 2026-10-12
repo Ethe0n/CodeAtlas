@@ -334,12 +334,22 @@ public sealed class ControlFlowAnalyzer
                     property.Syntax,
                     captureValues),
             IInvocationOperation invocation => FormatSyntax(invocation.Syntax),
-            ILiteralOperation literal => literal.ConstantValue.HasValue
-                ? literal.ConstantValue.Value?.ToString() ?? "Nothing"
-                : FormatSyntax(literal.Syntax),
+            ILiteralOperation literal => FormatLiteral(literal),
             IFlowCaptureReferenceOperation capture => FormatFlowCaptureReference(capture, captureValues),
             _ => FormatSyntax(operation.Syntax)
         };
+    }
+
+    private static string FormatLiteral(ILiteralOperation literal)
+    {
+        if (!literal.IsImplicit)
+        {
+            return FormatSyntax(literal.Syntax);
+        }
+
+        return literal.ConstantValue.HasValue
+            ? literal.ConstantValue.Value?.ToString() ?? "Nothing"
+            : FormatSyntax(literal.Syntax);
     }
 
     private static string FormatMemberReference(

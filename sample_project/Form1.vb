@@ -6,6 +6,10 @@
     Debug.Print(GlobalContext.Instance.BuildStatusMessage("Form1", New Integer() {10, 20, 30}))
   End Sub
 
+  Public Sub EmptyStringTest()
+    Dim test_string = ""
+  End Sub
+
   Private Sub Button1_Click(sender As Object, e As EventArgs) Handles Button1.Click
     If True Then
       Debug.Print("Hello world")
