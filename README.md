@@ -16,6 +16,7 @@ CodeAtlas - VB(Visual Basic) .net code analyzer
 - [ ] UI Controls, UI Event handlers 좀 더 보기 편하게
 - [ ] data.json 파일로 빼서 매번 로딩 반복 안하도록 하기
 - [ ] 검색 기능 추가
+- [ ] method flow chart 로컬 AI와 연동
 
 # Issue
 - [x] On Error Resume Next와 같은 키워드가 블록으로 처리됨
