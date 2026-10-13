@@ -1,4 +1,6 @@
-﻿Public Class Form1
+﻿Imports System.Security.AccessControl
+
+Public Class Form1
   Private number As Integer
 
   Public Sub TestFunction()
@@ -20,6 +22,22 @@
   End Sub
 
   Public Sub LongParameterListTest(a As Integer, b As String, c As Integer, long_parameter_name_like_this As String, long_parameter_name_like_this_again As Integer)
+
+  End Sub
+
+  Public Sub TryCatchUsingTest()
+    Try
+      Debug.Print("try test")
+      Debug.Print("try test 2")
+      Debug.Print("try test 3")
+
+      For index As Integer = 1 To 5
+        Debug.Write(index.ToString & " ")
+      Next
+
+    Catch ex As Exception
+      Debug.Print("Catch")
+    End Try
 
   End Sub
 
@@ -84,13 +102,41 @@
     Select Case value
       Case 1
         result = "One"
+        If True Then
+          Debug.Print("hello")
+        ElseIf False Then
+          Debug.Print("hello")
+        Else
+          Debug.Print("hello")
+        End If
       Case 2, 3
         result = "Two or Three"
+        If True Then
+          Debug.Print("hello")
+        ElseIf False Then
+          Debug.Print("hello")
+        Else
+          Debug.Print("hello")
+        End If
       Case 4 To 6
         result = "Range"
       Case Is >= 10
         result = "High"
+        If True Then
+          Debug.Print("hello")
+        ElseIf False Then
+          Debug.Print("hello")
+        Else
+          Debug.Print("hello")
+        End If
       Case Else
+        If True Then
+          Debug.Print("hello")
+        ElseIf False Then
+          Debug.Print("hello")
+        Else
+          Debug.Print("hello")
+        End If
         result = "Other"
         Debug.Print("case not found")
     End Select

@@ -42,7 +42,9 @@ internal sealed class ControlFlowPresentationBuilder
         continue;
       }
 
-      var isBackEdge = rawEdge.To <= rawEdge.From;
+      var isBackEdge = IsBackEdge(
+          rawNodesById[rawEdge.From],
+          rawNodesById[rawEdge.To]);
       var edgeKind = IsControlStructureLink(
           rawNodesById[rawEdge.To],
           isBackEdge)
@@ -327,6 +329,25 @@ internal sealed class ControlFlowPresentationBuilder
   {
     return isBackEdge &&
         target.ControlStructure?.Kind == ControlFlowStructureKind.ForEach;
+  }
+
+  private static bool IsBackEdge(ControlFlowNode source, ControlFlowNode target)
+  {
+    if (target.Id > source.Id)
+    {
+      return false;
+    }
+
+    if (source.SourceLocation is not null &&
+        target.SourceLocation is not null &&
+        (target.SourceLocation.StartLine > source.SourceLocation.StartLine ||
+         target.SourceLocation.StartLine == source.SourceLocation.StartLine &&
+         target.SourceLocation.StartColumn > source.SourceLocation.StartColumn))
+    {
+      return false;
+    }
+
+    return true;
   }
 
   private static void AddEdgeIfMissing(

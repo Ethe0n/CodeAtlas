@@ -114,6 +114,8 @@ public sealed class ControlFlowGraphView : UserControl
           graph.LayerConstraints.AddUpDownVerticalConstraint(tap, target);
         }
       }
+
+      ApplySelectCaseLaneConstraints(graph, presentation, fanout);
     }
 
     foreach (var merge in selectCaseMerges)
@@ -163,11 +165,6 @@ public sealed class ControlFlowGraphView : UserControl
         if (caseNode is not null && firstSuccessors.Length == 1)
         {
           graph.LayerConstraints.AddUpDownVerticalConstraint(caseNode, firstSuccessors[0]);
-        }
-
-        if (caseNode is not null && globalTap is not null)
-        {
-          graph.LayerConstraints.AddUpDownVerticalConstraint(caseNode, globalTap);
         }
 
         if (laneOutput is not null && globalTap is not null)
@@ -770,6 +767,90 @@ public sealed class ControlFlowGraphView : UserControl
     }
 
     return merges;
+  }
+
+  private static void ApplySelectCaseLaneConstraints(
+      Graph graph,
+      ControlFlowPresentation presentation,
+      SelectCaseFanout fanout)
+  {
+    var groupNodeIds = presentation.Nodes
+        .Where(node => string.Equals(
+            node.ControlStructureGroupId,
+            fanout.GroupId,
+            StringComparison.Ordinal))
+        .Select(node => node.Id)
+        .ToHashSet(StringComparer.Ordinal);
+    var nodeOrder = presentation.Nodes
+        .Select((node, index) => (node.Id, index))
+        .ToDictionary(item => item.Id, item => item.index, StringComparer.Ordinal);
+    var laneDepths = fanout.Branches
+        .Select(branch => GetReachableDepthsWithinGroup(
+            branch.TargetId,
+            groupNodeIds,
+            presentation.Edges))
+        .ToArray();
+    var maximumDepth = laneDepths
+        .SelectMany(depths => depths.Values)
+        .DefaultIfEmpty()
+        .Max();
+
+    for (var depth = 0; depth <= maximumDepth; depth++)
+    {
+      var layerNodes = laneDepths
+          .SelectMany(depths => depths
+              .Where(item => item.Value == depth)
+              .OrderBy(item => nodeOrder.GetValueOrDefault(item.Key))
+              .Select(item => graph.FindNode(item.Key)))
+          .Where(node => node is not null)
+          .Select(node => node!)
+          .ToArray();
+      if (layerNodes.Length < 2)
+      {
+        continue;
+      }
+
+      graph.LayerConstraints.PinNodesToSameLayer(layerNodes);
+      for (var index = 0; index < layerNodes.Length - 1; index++)
+      {
+        graph.LayerConstraints.AddLeftRightConstraint(
+            layerNodes[index],
+            layerNodes[index + 1]);
+      }
+    }
+  }
+
+  private static IReadOnlyDictionary<string, int> GetReachableDepthsWithinGroup(
+      string startNodeId,
+      IReadOnlySet<string> groupNodeIds,
+      IReadOnlyList<ControlFlowPresentationEdge> edges)
+  {
+    var depths = new Dictionary<string, int>(StringComparer.Ordinal)
+    {
+      [startNodeId] = 0
+    };
+    var pending = new Queue<string>();
+    pending.Enqueue(startNodeId);
+
+    while (pending.Count > 0)
+    {
+      var current = pending.Dequeue();
+      foreach (var edge in edges.Where(edge =>
+          edge.From == current &&
+          !edge.IsBackEdge &&
+          groupNodeIds.Contains(edge.To)))
+      {
+        if (depths.ContainsKey(edge.To))
+        {
+          continue;
+        }
+
+        depths.Add(edge.To, depths[current] + 1);
+        pending.Enqueue(edge.To);
+      }
+    }
+
+    return depths;
   }
 
   private static HashSet<string> GetReachableWithinGroup(
