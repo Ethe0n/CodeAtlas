@@ -67,6 +67,7 @@ internal sealed class ControlFlowPresentationBuilder
     SimplifySelectCases(controlFlow, nodes, edges, chains, rawNodesById);
     CollapsePassThroughNodes(nodes, edges);
     ApplyExceptionRegionMetadata(controlFlow.Regions, nodes);
+    ApplyExceptionRegionEdgeLabels(nodes, edges);
     return new ControlFlowPresentation(controlFlow.MethodName, nodes, edges);
   }
 
@@ -155,6 +156,38 @@ internal sealed class ControlFlowPresentationBuilder
   private static string NormalizeExceptionRegionKind(string kind)
   {
     return kind == "FilterAndHandler" ? "Catch" : kind;
+  }
+
+  private static void ApplyExceptionRegionEdgeLabels(
+      IReadOnlyList<ControlFlowPresentationNode> nodes,
+      List<ControlFlowPresentationEdge> edges)
+  {
+    var nodesById = nodes.ToDictionary(node => node.Id, StringComparer.Ordinal);
+    for (var index = 0; index < edges.Count; index++)
+    {
+      var edge = edges[index];
+      if (!nodesById.TryGetValue(edge.To, out var target) ||
+          !target.IsExceptionRegionEntry ||
+          edge.Kind is "ConditionalTrue" or "ConditionalFalse" or "Conditional")
+      {
+        continue;
+      }
+
+      nodesById.TryGetValue(edge.From, out var source);
+      if (source?.ExceptionRegionId == target.ExceptionRegionId)
+      {
+        continue;
+      }
+
+      var label = target.ExceptionRegionKind == "Catch" &&
+          !string.IsNullOrWhiteSpace(target.ExceptionType)
+              ? $"Catch {target.ExceptionType}"
+              : target.ExceptionRegionKind;
+      if (!string.IsNullOrWhiteSpace(label))
+      {
+        edges[index] = edge with { DisplayLabel = label };
+      }
+    }
   }
 
   private static void ApplyStructuredTransfers(

@@ -450,16 +450,6 @@ public sealed class ControlFlowGraphView : UserControl
     };
   }
 
-  private static string FormatExceptionRegionLabel(ControlFlowPresentationNode node)
-  {
-    if (node.ExceptionRegionKind != "Catch" || string.IsNullOrWhiteSpace(node.ExceptionType))
-    {
-      return node.ExceptionRegionKind ?? string.Empty;
-    }
-
-    return $"Catch {node.ExceptionType}";
-  }
-
   private static void ApplyExceptionRegionConstraints(
       Graph graph,
       ControlFlowPresentation presentation)
@@ -1215,13 +1205,6 @@ public sealed class ControlFlowGraphView : UserControl
     }
 
     var body = node.Text;
-    if (node.IsExceptionRegionEntry)
-    {
-      var regionLabel = FormatExceptionRegionLabel(node);
-      body = string.IsNullOrWhiteSpace(body)
-          ? regionLabel
-          : $"{regionLabel}{Environment.NewLine}{body}";
-    }
 
     return string.IsNullOrWhiteSpace(body)
         ? FormatBlockId(node)
