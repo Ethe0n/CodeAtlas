@@ -66,7 +66,95 @@ internal sealed class ControlFlowPresentationBuilder
     ApplyStructuredTransfers(controlFlow, edges, chains);
     SimplifySelectCases(controlFlow, nodes, edges, chains, rawNodesById);
     CollapsePassThroughNodes(nodes, edges);
+    ApplyExceptionRegionMetadata(controlFlow.Regions, nodes);
     return new ControlFlowPresentation(controlFlow.MethodName, nodes, edges);
+  }
+
+  private static void ApplyExceptionRegionMetadata(
+      IReadOnlyList<ControlFlowRegionInfo> regions,
+      List<ControlFlowPresentationNode> nodes)
+  {
+    var exceptionRegions = regions
+        .Where(region => region.Kind is "Try" or "Catch" or "FilterAndHandler" or "Finally")
+        .ToArray();
+    if (exceptionRegions.Length == 0)
+    {
+      return;
+    }
+
+    var regionsById = regions.ToDictionary(region => region.Id, StringComparer.Ordinal);
+
+    for (var index = 0; index < nodes.Count; index++)
+    {
+      var node = nodes[index];
+      var region = exceptionRegions
+          .Where(candidate =>
+              node.SourceBlockId >= candidate.FirstBlockId &&
+              node.SourceBlockId <= candidate.LastBlockId)
+          .OrderBy(candidate => candidate.LastBlockId - candidate.FirstBlockId)
+          .ThenBy(candidate => GetExceptionRegionPriority(candidate.Kind))
+          .FirstOrDefault();
+      if (region is null)
+      {
+        continue;
+      }
+
+      nodes[index] = node with
+      {
+        ExceptionRegionId = region.Id,
+        ExceptionRegionParentId = region.ParentId,
+        ExceptionGroupId = GetExceptionGroupId(region, regionsById),
+        ExceptionRegionKind = NormalizeExceptionRegionKind(region.Kind),
+        ExceptionType = region.ExceptionType
+      };
+    }
+
+    foreach (var regionNodes in nodes
+        .Where(node => !string.IsNullOrWhiteSpace(node.ExceptionRegionId))
+        .GroupBy(node => node.ExceptionRegionId!, StringComparer.Ordinal))
+    {
+      var firstNode = regionNodes
+          .OrderBy(node => node.SourceBlockId)
+          .ThenBy(node => node.SegmentIndex)
+          .First();
+      var index = nodes.FindIndex(node => node.Id == firstNode.Id);
+      nodes[index] = firstNode with { IsExceptionRegionEntry = true };
+    }
+  }
+
+  private static string? GetExceptionGroupId(
+      ControlFlowRegionInfo region,
+      IReadOnlyDictionary<string, ControlFlowRegionInfo> regionsById)
+  {
+    var parentId = region.ParentId;
+    while (parentId is not null && regionsById.TryGetValue(parentId, out var parent))
+    {
+      if (parent.Kind is "TryAndCatch" or "TryAndFinally")
+      {
+        return parent.Id;
+      }
+
+      parentId = parent.ParentId;
+    }
+
+    return region.ParentId;
+  }
+
+  private static int GetExceptionRegionPriority(string kind)
+  {
+    return kind switch
+    {
+      "Catch" => 0,
+      "Finally" => 1,
+      "Try" => 2,
+      "FilterAndHandler" => 3,
+      _ => 4
+    };
+  }
+
+  private static string NormalizeExceptionRegionKind(string kind)
+  {
+    return kind == "FilterAndHandler" ? "Catch" : kind;
   }
 
   private static void ApplyStructuredTransfers(
@@ -578,6 +666,18 @@ internal sealed record ControlFlowPresentationNode(
     string Text)
 {
   public string? ControlStructureGroupId { get; init; }
+
+  public string? ExceptionRegionId { get; init; }
+
+  public string? ExceptionRegionParentId { get; init; }
+
+  public string? ExceptionGroupId { get; init; }
+
+  public string? ExceptionRegionKind { get; init; }
+
+  public string? ExceptionType { get; init; }
+
+  public bool IsExceptionRegionEntry { get; init; }
 }
 
 internal sealed record ControlFlowPresentationEdge(

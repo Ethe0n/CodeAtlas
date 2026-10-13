@@ -322,6 +322,7 @@ public sealed class ControlFlowGraphView : UserControl
         presentation,
         selectCaseFanouts,
         selectCaseMerges);
+    ApplyExceptionRegionConstraints(graph, presentation);
 
     _viewer.Graph = graph;
     _viewer.Visible = true;
@@ -447,6 +448,93 @@ public sealed class ControlFlowGraphView : UserControl
         Padding = 8
       }
     };
+  }
+
+  private static string FormatExceptionRegionLabel(ControlFlowPresentationNode node)
+  {
+    if (node.ExceptionRegionKind != "Catch" || string.IsNullOrWhiteSpace(node.ExceptionType))
+    {
+      return node.ExceptionRegionKind ?? string.Empty;
+    }
+
+    return $"Catch {node.ExceptionType}";
+  }
+
+  private static void ApplyExceptionRegionConstraints(
+      Graph graph,
+      ControlFlowPresentation presentation)
+  {
+    var regionGroups = presentation.Nodes
+        .Where(node => !string.IsNullOrWhiteSpace(node.ExceptionRegionId))
+        .GroupBy(node => node.ExceptionRegionId!, StringComparer.Ordinal)
+        .Select(group => new
+        {
+          Nodes = group
+              .OrderBy(node => node.SourceBlockId)
+              .ThenBy(node => node.SegmentIndex)
+              .ToArray(),
+          First = group
+              .OrderBy(node => node.SourceBlockId)
+              .ThenBy(node => node.SegmentIndex)
+              .First()
+        })
+        .ToArray();
+
+    foreach (var region in regionGroups)
+    {
+      var regionNodeIds = region.Nodes
+          .Select(node => node.Id)
+          .ToHashSet(StringComparer.Ordinal);
+
+      foreach (var edge in presentation.Edges.Where(edge =>
+          regionNodeIds.Contains(edge.From) &&
+          regionNodeIds.Contains(edge.To) &&
+          !edge.IsBackEdge))
+      {
+        var outgoingCount = presentation.Edges.Count(candidate =>
+            candidate.From == edge.From &&
+            regionNodeIds.Contains(candidate.To) &&
+            !candidate.IsBackEdge);
+        var incomingCount = presentation.Edges.Count(candidate =>
+            candidate.To == edge.To &&
+            regionNodeIds.Contains(candidate.From) &&
+            !candidate.IsBackEdge);
+        if (outgoingCount != 1 || incomingCount != 1)
+        {
+          continue;
+        }
+
+        var source = graph.FindNode(edge.From);
+        var target = graph.FindNode(edge.To);
+        if (source is not null && target is not null)
+        {
+          graph.LayerConstraints.AddUpDownVerticalConstraint(source, target);
+        }
+      }
+    }
+
+    foreach (var catches in regionGroups
+        .Where(region => region.First.ExceptionRegionKind == "Catch")
+        .GroupBy(region => region.First.ExceptionGroupId, StringComparer.Ordinal))
+    {
+      var catchEntries = catches
+          .Select(region => graph.FindNode(region.First.Id))
+          .Where(node => node is not null)
+          .Select(node => node!)
+          .ToArray();
+      if (catchEntries.Length < 2)
+      {
+        continue;
+      }
+
+      graph.LayerConstraints.PinNodesToSameLayer(catchEntries);
+      for (var index = 0; index < catchEntries.Length - 1; index++)
+      {
+        graph.LayerConstraints.AddLeftRightConstraint(
+            catchEntries[index],
+            catchEntries[index + 1]);
+      }
+    }
   }
 
   private static void ExportPng(Graph graph, string filePath)
@@ -1057,6 +1145,9 @@ public sealed class ControlFlowGraphView : UserControl
       "Entry" => Microsoft.Msagl.Drawing.Color.ForestGreen,
       "Exit" => Microsoft.Msagl.Drawing.Color.DimGray,
       _ when IsConditionNode(node) => Microsoft.Msagl.Drawing.Color.DarkOrange,
+      _ when node.ExceptionRegionKind == "Try" => new Microsoft.Msagl.Drawing.Color(70, 112, 170),
+      _ when node.ExceptionRegionKind == "Catch" => new Microsoft.Msagl.Drawing.Color(176, 76, 76),
+      _ when node.ExceptionRegionKind == "Finally" => new Microsoft.Msagl.Drawing.Color(112, 88, 150),
       _ => Microsoft.Msagl.Drawing.Color.SlateGray
     };
     graphNode.Attr.FillColor = node.Kind switch
@@ -1064,6 +1155,9 @@ public sealed class ControlFlowGraphView : UserControl
       "Entry" => new Microsoft.Msagl.Drawing.Color(224, 247, 232),
       "Exit" => new Microsoft.Msagl.Drawing.Color(238, 238, 238),
       _ when IsConditionNode(node) => new Microsoft.Msagl.Drawing.Color(255, 247, 224),
+      _ when node.ExceptionRegionKind == "Try" => new Microsoft.Msagl.Drawing.Color(242, 247, 253),
+      _ when node.ExceptionRegionKind == "Catch" => new Microsoft.Msagl.Drawing.Color(253, 244, 244),
+      _ when node.ExceptionRegionKind == "Finally" => new Microsoft.Msagl.Drawing.Color(247, 244, 251),
       _ => Microsoft.Msagl.Drawing.Color.White
     };
   }
@@ -1121,6 +1215,13 @@ public sealed class ControlFlowGraphView : UserControl
     }
 
     var body = node.Text;
+    if (node.IsExceptionRegionEntry)
+    {
+      var regionLabel = FormatExceptionRegionLabel(node);
+      body = string.IsNullOrWhiteSpace(body)
+          ? regionLabel
+          : $"{regionLabel}{Environment.NewLine}{body}";
+    }
 
     return string.IsNullOrWhiteSpace(body)
         ? FormatBlockId(node)
