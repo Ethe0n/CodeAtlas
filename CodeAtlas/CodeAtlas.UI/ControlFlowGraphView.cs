@@ -144,7 +144,14 @@ public sealed class ControlFlowGraphView : UserControl
           var tap = graph.FindNode(input.TapId);
           if (source is not null && tap is not null)
           {
-            graph.LayerConstraints.AddUpDownVerticalConstraint(source, tap);
+            if (lane.Inputs.Count == 1)
+            {
+              graph.LayerConstraints.AddUpDownVerticalConstraint(source, tap);
+            }
+            else
+            {
+              graph.LayerConstraints.AddUpDownConstraint(source, tap);
+            }
           }
         }
 
@@ -167,7 +174,9 @@ public sealed class ControlFlowGraphView : UserControl
           graph.LayerConstraints.AddUpDownVerticalConstraint(caseNode, firstSuccessors[0]);
         }
 
-        if (laneOutput is not null && globalTap is not null)
+        if (lane.OutputId != lane.GlobalTapId &&
+            laneOutput is not null &&
+            globalTap is not null)
         {
           graph.LayerConstraints.AddUpDownVerticalConstraint(laneOutput, globalTap);
         }
@@ -715,41 +724,14 @@ public sealed class ControlFlowGraphView : UserControl
       {
         var candidate = activeCandidates[laneIndex];
         var globalTapId = globalTapIds[laneIndex];
-        if (candidate.Edges.Count == 1)
-        {
-          lanes.Add(new SelectCaseMergeLane(
-              candidate.CaseNodeId,
-              candidate.Edges[0].From,
-              globalTapId,
-              Array.Empty<string>(),
-              [new SelectCaseMergeInput(candidate.Edges[0], globalTapId)]));
-          continue;
-        }
-
-        var localJunctionId = $"{fanout.SelectorId}_local_merge_{laneIndex}";
-        var localBusPointIds = new List<string>();
-        var inputs = new List<SelectCaseMergeInput>();
-        var localMiddleIndex = candidate.Edges.Count / 2;
-        for (var inputIndex = 0; inputIndex < candidate.Edges.Count; inputIndex++)
-        {
-          if (candidate.Edges.Count % 2 == 0 && inputIndex == localMiddleIndex)
-          {
-            localBusPointIds.Add(localJunctionId);
-          }
-
-          var localTapId = candidate.Edges.Count % 2 == 1 && inputIndex == localMiddleIndex
-              ? localJunctionId
-              : $"{fanout.SelectorId}_local_merge_{laneIndex}_tap_{inputIndex}";
-          localBusPointIds.Add(localTapId);
-          inputs.Add(new SelectCaseMergeInput(candidate.Edges[inputIndex], localTapId));
-        }
-
         lanes.Add(new SelectCaseMergeLane(
             candidate.CaseNodeId,
-            localJunctionId,
             globalTapId,
-            localBusPointIds,
-            inputs));
+            globalTapId,
+            Array.Empty<string>(),
+            candidate.Edges
+                .Select(edge => new SelectCaseMergeInput(edge, globalTapId))
+                .ToArray()));
       }
 
       foreach (var pointId in globalBusPointIds
@@ -790,6 +772,74 @@ public sealed class ControlFlowGraphView : UserControl
             groupNodeIds,
             presentation.Edges))
         .ToArray();
+
+    for (var laneIndex = 0; laneIndex < fanout.Branches.Count; laneIndex++)
+    {
+      var laneNodeIds = laneDepths[laneIndex].Keys.ToHashSet(StringComparer.Ordinal);
+      var currentId = fanout.Branches[laneIndex].TargetId;
+
+      while (true)
+      {
+        var outgoing = presentation.Edges
+            .Where(edge =>
+                edge.From == currentId &&
+                !edge.IsBackEdge &&
+                laneNodeIds.Contains(edge.To))
+            .ToArray();
+        if (outgoing.Length != 1)
+        {
+          break;
+        }
+
+        var targetId = outgoing[0].To;
+        var incomingCount = presentation.Edges.Count(edge =>
+            !edge.IsBackEdge &&
+            laneNodeIds.Contains(edge.From) &&
+            edge.To == targetId);
+        if (incomingCount != 1)
+        {
+          break;
+        }
+
+        var source = graph.FindNode(currentId);
+        var target = graph.FindNode(targetId);
+        if (source is not null && target is not null)
+        {
+          graph.LayerConstraints.AddUpDownVerticalConstraint(source, target);
+        }
+
+        currentId = targetId;
+      }
+
+      foreach (var conditionId in laneNodeIds)
+      {
+        var trueEdge = presentation.Edges.FirstOrDefault(edge =>
+            edge.From == conditionId &&
+            edge.Kind == "ConditionalTrue" &&
+            laneNodeIds.Contains(edge.To));
+        var falseEdge = presentation.Edges.FirstOrDefault(edge =>
+            edge.From == conditionId &&
+            edge.Kind == "ConditionalFalse" &&
+            laneNodeIds.Contains(edge.To));
+        if (trueEdge is null || falseEdge is null)
+        {
+          continue;
+        }
+
+        var condition = graph.FindNode(conditionId);
+        var trueTarget = graph.FindNode(trueEdge.To);
+        var falseTarget = graph.FindNode(falseEdge.To);
+        if (condition is null || trueTarget is null || falseTarget is null)
+        {
+          continue;
+        }
+
+        graph.LayerConstraints.PinNodesToSameLayer(trueTarget, falseTarget);
+        graph.LayerConstraints.AddUpDownVerticalConstraint(condition, trueTarget);
+        graph.LayerConstraints.AddLeftRightConstraint(trueTarget, falseTarget);
+      }
+    }
+
     var maximumDepth = laneDepths
         .SelectMany(depths => depths.Values)
         .DefaultIfEmpty()
