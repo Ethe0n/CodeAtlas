@@ -942,16 +942,26 @@ public sealed class ControlFlowGraphView : UserControl
     var edgeColor = GetEdgeColor(edge.Kind);
 
     graphEdge.Attr.ArrowheadAtTarget = ArrowStyle.Normal;
-    graphEdge.Attr.LineWidth = edge.Kind is "ConditionalTrue" or "ConditionalFalse" or "ControlStructureLink" ? 1.4 : 1;
+    graphEdge.Attr.LineWidth = edge.Kind is
+        "ConditionalTrue" or
+        "ConditionalFalse" or
+        "ControlStructureLink" or
+        "Exception"
+            ? 1.4
+            : 1;
     graphEdge.Attr.Color = edgeColor;
 
     if (graphEdge.Label is not null &&
-        edge.Kind is "ConditionalTrue" or "ConditionalFalse" or "ControlStructureLink")
+        edge.Kind is "ConditionalTrue" or "ConditionalFalse" or "ControlStructureLink" or "Exception")
     {
       graphEdge.Label.FontColor = edgeColor;
     }
 
-    if (IsBackEdge(edge))
+    if (edge.Kind == "Exception")
+    {
+      graphEdge.Attr.AddStyle(Style.Dashed);
+    }
+    else if (IsBackEdge(edge))
     {
       graphEdge.Attr.LineWidth = 1.6;
       graphEdge.Attr.AddStyle(Style.Dashed);
@@ -965,6 +975,7 @@ public sealed class ControlFlowGraphView : UserControl
       "ConditionalTrue" => Microsoft.Msagl.Drawing.Color.ForestGreen,
       "ConditionalFalse" => Microsoft.Msagl.Drawing.Color.Firebrick,
       "ControlStructureLink" => new Microsoft.Msagl.Drawing.Color(184, 134, 11),
+      "Exception" => Microsoft.Msagl.Drawing.Color.Firebrick,
       _ => Microsoft.Msagl.Drawing.Color.DimGray
     };
   }

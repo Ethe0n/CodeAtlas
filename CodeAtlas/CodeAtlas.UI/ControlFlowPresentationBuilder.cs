@@ -61,9 +61,137 @@ internal sealed class ControlFlowPresentationBuilder
           isBackEdge));
     }
 
+    ApplyStructuredTransfers(controlFlow, edges, chains);
     SimplifySelectCases(controlFlow, nodes, edges, chains, rawNodesById);
     CollapsePassThroughNodes(nodes, edges);
     return new ControlFlowPresentation(controlFlow.MethodName, nodes, edges);
+  }
+
+  private static void ApplyStructuredTransfers(
+      ControlFlowInfo controlFlow,
+      List<ControlFlowPresentationEdge> edges,
+      IReadOnlyDictionary<int, IReadOnlyList<ControlFlowPresentationNode>> chains)
+  {
+    if (controlFlow.Regions.Count == 0 || controlFlow.Transfers.Count == 0)
+    {
+      return;
+    }
+
+    var regionsById = controlFlow.Regions.ToDictionary(region => region.Id, StringComparer.Ordinal);
+    ApplyFinallyTransfers(controlFlow.Transfers, regionsById, edges, chains);
+    AddCatchTransfers(controlFlow.Transfers, controlFlow.Regions, edges, chains);
+  }
+
+  private static void ApplyFinallyTransfers(
+      IReadOnlyList<ControlFlowTransferInfo> transfers,
+      IReadOnlyDictionary<string, ControlFlowRegionInfo> regionsById,
+      List<ControlFlowPresentationEdge> edges,
+      IReadOnlyDictionary<int, IReadOnlyList<ControlFlowPresentationNode>> chains)
+  {
+    foreach (var transfer in transfers.Where(transfer =>
+        transfer.To is not null &&
+        transfer.FinallyRegionIds.Count > 0))
+    {
+      if (!chains.TryGetValue(transfer.From, out var sourceChain) ||
+          !chains.TryGetValue(transfer.To!.Value, out var targetChain))
+      {
+        continue;
+      }
+
+      var sourceId = sourceChain[^1].Id;
+      var targetId = targetChain[0].Id;
+      var originalEdge = edges.FirstOrDefault(edge =>
+          edge.From == sourceId &&
+          edge.To == targetId);
+      if (originalEdge is null)
+      {
+        continue;
+      }
+
+      var finallyRegions = transfer.FinallyRegionIds
+          .Select(regionId => regionsById.GetValueOrDefault(regionId))
+          .Where(region => region is not null)
+          .Select(region => region!)
+          .Where(region =>
+              chains.ContainsKey(region.FirstBlockId) &&
+              chains.ContainsKey(region.LastBlockId))
+          .ToArray();
+      if (finallyRegions.Length == 0)
+      {
+        continue;
+      }
+
+      edges.Remove(originalEdge);
+      var previousNodeId = sourceId;
+      foreach (var finallyRegion in finallyRegions)
+      {
+        var finallyEntryId = chains[finallyRegion.FirstBlockId][0].Id;
+        AddEdgeIfMissing(
+            edges,
+            new ControlFlowPresentationEdge(
+                previousNodeId,
+                finallyEntryId,
+                "FallThrough",
+                Condition: null,
+                DisplayLabel: null,
+                IsBackEdge: false));
+        previousNodeId = chains[finallyRegion.LastBlockId][^1].Id;
+      }
+
+      AddEdgeIfMissing(edges, originalEdge with { From = previousNodeId });
+    }
+  }
+
+  private static void AddCatchTransfers(
+      IReadOnlyList<ControlFlowTransferInfo> transfers,
+      IReadOnlyList<ControlFlowRegionInfo> regions,
+      List<ControlFlowPresentationEdge> edges,
+      IReadOnlyDictionary<int, IReadOnlyList<ControlFlowPresentationNode>> chains)
+  {
+    foreach (var catchRegion in regions.Where(region =>
+        region.Kind is "Catch" or "FilterAndHandler" &&
+        region.ParentId is not null))
+    {
+      var tryRegion = regions.FirstOrDefault(region =>
+          string.Equals(region.ParentId, catchRegion.ParentId, StringComparison.Ordinal) &&
+          region.Kind == "Try");
+      if (tryRegion is null || !chains.TryGetValue(catchRegion.FirstBlockId, out var catchChain))
+      {
+        continue;
+      }
+
+      var exceptionSources = transfers
+          .Where(transfer =>
+              transfer.To is null &&
+              transfer.From >= tryRegion.FirstBlockId &&
+              transfer.From <= tryRegion.LastBlockId &&
+              transfer.Semantics is "Throw" or "Rethrow" or "Error")
+          .Select(transfer => transfer.From)
+          .Distinct()
+          .ToArray();
+      if (exceptionSources.Length == 0)
+      {
+        exceptionSources = [tryRegion.FirstBlockId];
+      }
+
+      foreach (var sourceBlockId in exceptionSources)
+      {
+        if (!chains.TryGetValue(sourceBlockId, out var sourceChain))
+        {
+          continue;
+        }
+
+        AddEdgeIfMissing(
+            edges,
+            new ControlFlowPresentationEdge(
+                sourceChain[^1].Id,
+                catchChain[0].Id,
+                "Exception",
+                Condition: catchRegion.ExceptionType,
+                DisplayLabel: "Exception",
+                IsBackEdge: false));
+      }
+    }
   }
 
   private static void SimplifySelectCases(

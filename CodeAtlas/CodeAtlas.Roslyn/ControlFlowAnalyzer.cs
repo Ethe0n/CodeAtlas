@@ -45,11 +45,32 @@ public sealed class ControlFlowAnalyzer
             .ThenBy(edge => edge.Kind, StringComparer.Ordinal)
             .ToArray();
 
+        var rawRegions = EnumerateRegions(graph.Root).ToArray();
+        var regionIds = rawRegions
+            .Select((region, index) => (Region: region, Id: $"region_{index}"))
+            .ToDictionary(item => item.Region, item => item.Id);
+        var regions = rawRegions
+            .Select(region => new ControlFlowRegionInfo(
+                regionIds[region],
+                region.Kind.ToString(),
+                region.EnclosingRegion is null ? null : regionIds[region.EnclosingRegion],
+                region.FirstBlockOrdinal,
+                region.LastBlockOrdinal,
+                region.ExceptionType?.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat)))
+            .ToArray();
+        var transfers = graph.Blocks
+            .SelectMany(block => ToTransfers(block, captureValues, regionIds))
+            .ToArray();
+
         return new ControlFlowInfo(
             GetSymbolId(methodSymbol),
             methodSymbol.Name,
             nodes,
-            edges);
+            edges)
+        {
+            Regions = regions,
+            Transfers = transfers
+        };
     }
 
     private static ControlFlowNode ToNode(
@@ -73,6 +94,10 @@ public sealed class ControlFlowAnalyzer
         {
             returnText = $"Return {FormatExpression(block.BranchValue, captureValues)}";
             textLines.Add(returnText);
+        }
+        else if (block.BranchValue is not null && HasThrowSuccessor(block))
+        {
+            textLines.Add($"Throw {FormatExpression(block.BranchValue, captureValues)}");
         }
         else if (block.BranchValue is not null)
         {
@@ -252,6 +277,67 @@ public sealed class ControlFlowAnalyzer
                 GetConditionalEdgeKind(block, isConditionalSuccessor: false),
                 block.ConditionalSuccessor is null ? null : condition);
         }
+    }
+
+    private static IEnumerable<ControlFlowRegion> EnumerateRegions(ControlFlowRegion region)
+    {
+        yield return region;
+
+        foreach (var nestedRegion in region.NestedRegions)
+        {
+            foreach (var descendant in EnumerateRegions(nestedRegion))
+            {
+                yield return descendant;
+            }
+        }
+    }
+
+    private static IEnumerable<ControlFlowTransferInfo> ToTransfers(
+        BasicBlock block,
+        IReadOnlyDictionary<object, string> captureValues,
+        IReadOnlyDictionary<ControlFlowRegion, string> regionIds)
+    {
+        var condition = block.BranchValue is null
+            ? null
+            : FormatConditionExpression(block.BranchValue, captureValues);
+
+        if (block.ConditionalSuccessor is { } conditionalSuccessor)
+        {
+            yield return ToTransferInfo(
+                block.Ordinal,
+                conditionalSuccessor,
+                "Conditional",
+                condition,
+                regionIds);
+        }
+
+        if (block.FallThroughSuccessor is { } fallThroughSuccessor)
+        {
+            yield return ToTransferInfo(
+                block.Ordinal,
+                fallThroughSuccessor,
+                "FallThrough",
+                block.ConditionalSuccessor is null ? null : condition,
+                regionIds);
+        }
+    }
+
+    private static ControlFlowTransferInfo ToTransferInfo(
+        int from,
+        ControlFlowBranch branch,
+        string slot,
+        string? condition,
+        IReadOnlyDictionary<ControlFlowRegion, string> regionIds)
+    {
+        return new ControlFlowTransferInfo(
+            from,
+            branch.Destination?.Ordinal,
+            slot,
+            branch.Semantics.ToString(),
+            condition,
+            branch.LeavingRegions.Select(region => regionIds[region]).ToArray(),
+            branch.EnteringRegions.Select(region => regionIds[region]).ToArray(),
+            branch.FinallyRegions.Select(region => regionIds[region]).ToArray());
     }
 
     private static string GetConditionalEdgeKind(BasicBlock block, bool isConditionalSuccessor)
@@ -556,6 +642,19 @@ public sealed class ControlFlowAnalyzer
     private static bool IsReturnSuccessor(ControlFlowBranch? branch)
     {
         return string.Equals(branch?.Semantics.ToString(), "Return", StringComparison.Ordinal);
+    }
+
+    private static bool HasThrowSuccessor(BasicBlock block)
+    {
+        return IsThrowSuccessor(block.ConditionalSuccessor) ||
+            IsThrowSuccessor(block.FallThroughSuccessor);
+    }
+
+    private static bool IsThrowSuccessor(ControlFlowBranch? branch)
+    {
+        return branch?.Semantics is
+            ControlFlowBranchSemantics.Throw or
+            ControlFlowBranchSemantics.Rethrow;
     }
 
     private static string GetSymbolId(ISymbol symbol)
