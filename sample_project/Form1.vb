@@ -25,7 +25,7 @@ Public Class Form1
 
   End Sub
 
-  Public Sub TryCatchUsingTest()
+  Public Sub TryCatchTest()
     Try
       Debug.Print("try test")
       Debug.Print("try test 2")
@@ -37,8 +37,20 @@ Public Class Form1
 
     Catch ex As Exception
       Debug.Print("Catch")
+
+    Finally
+      Debug.Print("Finally")
     End Try
 
+    Debug.Print("Try - Catch End")
+
+  End Sub
+
+  Public Sub UsingTest()
+    Using writer As System.IO.TextWriter = System.IO.File.CreateText("log.txt")
+      writer.WriteLine("This is line one.")
+      writer.WriteLine("This is line two.")
+    End Using
   End Sub
 
   Private Sub Button1_Click(sender As Object, e As EventArgs) Handles Button1.Click

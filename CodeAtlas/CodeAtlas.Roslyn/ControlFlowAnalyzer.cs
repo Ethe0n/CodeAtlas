@@ -49,6 +49,13 @@ public sealed class ControlFlowAnalyzer
         var regionIds = rawRegions
             .Select((region, index) => (Region: region, Id: $"region_{index}"))
             .ToDictionary(item => item.Region, item => item.Id);
+        var usingRegionRoots = GetUsingRegionRoots(methodBlock, rawRegions, graph.Blocks);
+        var regionSourceKinds = rawRegions.ToDictionary(
+            region => region,
+            region => usingRegionRoots.Any(root => IsRegionWithin(region, root))
+                ? ControlFlowRegionSourceKind.Using
+                : ControlFlowRegionSourceKind.None);
+
         var regions = rawRegions
             .Select(region => new ControlFlowRegionInfo(
                 regionIds[region],
@@ -56,7 +63,10 @@ public sealed class ControlFlowAnalyzer
                 region.EnclosingRegion is null ? null : regionIds[region.EnclosingRegion],
                 region.FirstBlockOrdinal,
                 region.LastBlockOrdinal,
-                region.ExceptionType?.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat)))
+                region.ExceptionType?.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat))
+            {
+                SourceKind = regionSourceKinds[region]
+            })
             .ToArray();
         var transfers = graph.Blocks
             .SelectMany(block => ToTransfers(block, captureValues, regionIds))
@@ -290,6 +300,71 @@ public sealed class ControlFlowAnalyzer
                 yield return descendant;
             }
         }
+    }
+
+    private static IReadOnlySet<ControlFlowRegion> GetUsingRegionRoots(
+        MethodBlockSyntax methodBlock,
+        IReadOnlyList<ControlFlowRegion> regions,
+        IReadOnlyList<BasicBlock> blocks)
+    {
+        var roots = new HashSet<ControlFlowRegion>();
+        foreach (var usingBlock in methodBlock.DescendantNodes().OfType<UsingBlockSyntax>())
+        {
+            var root = regions
+                .Where(region =>
+                    region.Kind == ControlFlowRegionKind.TryAndFinally &&
+                    RegionContainsUsingSyntax(region, blocks, usingBlock))
+                .OrderBy(region => region.LastBlockOrdinal - region.FirstBlockOrdinal)
+                .FirstOrDefault();
+            if (root is not null)
+            {
+                roots.Add(root);
+            }
+        }
+
+        return roots;
+    }
+
+    private static bool RegionContainsUsingSyntax(
+        ControlFlowRegion region,
+        IReadOnlyList<BasicBlock> blocks,
+        UsingBlockSyntax usingBlock)
+    {
+        for (var ordinal = region.FirstBlockOrdinal;
+             ordinal <= region.LastBlockOrdinal;
+             ordinal++)
+        {
+            var block = blocks[ordinal];
+            if (block.Operations.Any(operation => IsInsideUsing(operation.Syntax, usingBlock)) ||
+                block.BranchValue is not null && IsInsideUsing(block.BranchValue.Syntax, usingBlock))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsInsideUsing(SyntaxNode syntax, UsingBlockSyntax usingBlock)
+    {
+        return syntax.AncestorsAndSelf()
+            .OfType<UsingBlockSyntax>()
+            .Any(candidate => candidate.Span == usingBlock.Span);
+    }
+
+    private static bool IsRegionWithin(
+        ControlFlowRegion region,
+        ControlFlowRegion ancestor)
+    {
+        for (var current = region; current is not null; current = current.EnclosingRegion)
+        {
+            if (ReferenceEquals(current, ancestor))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static IEnumerable<ControlFlowTransferInfo> ToTransfers(

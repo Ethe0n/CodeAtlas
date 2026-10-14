@@ -6,4 +6,13 @@ public sealed record ControlFlowRegionInfo(
     string? ParentId,
     int FirstBlockId,
     int LastBlockId,
-    string? ExceptionType);
+    string? ExceptionType)
+{
+    public ControlFlowRegionSourceKind SourceKind { get; init; }
+}
+
+public enum ControlFlowRegionSourceKind
+{
+    None,
+    Using
+}

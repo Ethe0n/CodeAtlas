@@ -105,7 +105,7 @@ internal sealed class ControlFlowPresentationBuilder
         ExceptionRegionId = region.Id,
         ExceptionRegionParentId = region.ParentId,
         ExceptionGroupId = GetExceptionGroupId(region, regionsById),
-        ExceptionRegionKind = NormalizeExceptionRegionKind(region.Kind),
+        ExceptionRegionKind = NormalizeExceptionRegionKind(region),
         ExceptionType = region.ExceptionType
       };
     }
@@ -153,9 +153,15 @@ internal sealed class ControlFlowPresentationBuilder
     };
   }
 
-  private static string NormalizeExceptionRegionKind(string kind)
+  private static string NormalizeExceptionRegionKind(ControlFlowRegionInfo region)
   {
-    return kind == "FilterAndHandler" ? "Catch" : kind;
+    if (region.SourceKind == ControlFlowRegionSourceKind.Using &&
+        region.Kind is "Try" or "Finally")
+    {
+      return "Using";
+    }
+
+    return region.Kind == "FilterAndHandler" ? "Catch" : region.Kind;
   }
 
   private static void ApplyExceptionRegionEdgeLabels(
@@ -175,6 +181,12 @@ internal sealed class ControlFlowPresentationBuilder
 
       nodesById.TryGetValue(edge.From, out var source);
       if (source?.ExceptionRegionId == target.ExceptionRegionId)
+      {
+        continue;
+      }
+
+      if (target.ExceptionRegionKind == "Using" &&
+          source?.ExceptionGroupId == target.ExceptionGroupId)
       {
         continue;
       }
