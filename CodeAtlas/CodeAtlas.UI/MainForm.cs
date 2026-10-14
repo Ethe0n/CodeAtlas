@@ -45,6 +45,9 @@ public sealed class MainForm : Form
   private FieldsNodeContext? _activeFieldsContext;
   private PropertiesNodeContext? _activePropertiesContext;
   private bool _initialSplitterDistanceApplied;
+  private bool _updatingDetails;
+  private Action? _pendingRelations;
+  private Action? _pendingFlow;
 
   public MainForm()
   {
@@ -55,8 +58,18 @@ public sealed class MainForm : Form
 
     BuildLayout();
     _openSolutionMenuItem.Click += async (_, _) => await OpenSolutionAsync();
-    _exportFlowImageMenuItem.Click += (_, _) => _controlFlowGraphView.ExportImage(this);
-    _exportFlowDiagramMenuItem.Click += (_, _) => _controlFlowGraphView.ExportDrawIo(this);
+    _exportFlowImageMenuItem.Click += (_, _) =>
+    {
+      _detailsTabs.SelectedTab = _flowTab;
+      EnsureSelectedGraphLoaded();
+      _controlFlowGraphView.ExportImage(this);
+    };
+    _exportFlowDiagramMenuItem.Click += (_, _) =>
+    {
+      _detailsTabs.SelectedTab = _flowTab;
+      EnsureSelectedGraphLoaded();
+      _controlFlowGraphView.ExportDrawIo(this);
+    };
     _cancelAnalysisButton.Click += (_, _) => CancelAnalysis();
     _callGraphView.MethodSelected += SelectMethodNodeBySymbolId;
     _classDependencyView.TypeSelected += SelectTypeNodeBySymbolId;
@@ -121,6 +134,7 @@ public sealed class MainForm : Form
     _mainSplitContainer.Panel1.Controls.Add(_projectSearchView);
 
     _detailsTabs.Dock = DockStyle.Fill;
+    _detailsTabs.SelectedIndexChanged += (_, _) => EnsureSelectedGraphLoaded();
     _overviewText.Dock = DockStyle.Fill;
     _overviewHost.Controls.Add(_overviewText);
     _overviewTab.Controls.Add(_overviewHost);
@@ -552,48 +566,78 @@ public sealed class MainForm : Form
   private void ShowNodeDetails(TreeNode? node)
   {
     var previousTab = _detailsTabs.SelectedTab;
-    ClearDetails();
-
-    var relationsAvailable = false;
-    var flowAvailable = false;
-
-    switch (node?.Tag)
+    _updatingDetails = true;
+    try
     {
-      case ProjectStructure project:
-        ShowProjectOverview(project);
-        ShowProjectDependency(project);
-        relationsAvailable = true;
-        break;
-      case TypeNodeContext typeContext:
-        ShowClassOverview(typeContext);
-        ShowClassDependency(typeContext);
-        relationsAvailable = true;
-        break;
-      case FieldsNodeContext fieldsContext:
-        ShowFieldsOverview(fieldsContext);
-        break;
-      case PropertiesNodeContext propertiesContext:
-        ShowPropertiesOverview(propertiesContext);
-        break;
-      case FieldNodeContext fieldContext:
-        ShowFieldOverview(fieldContext);
-        break;
-      case PropertyNodeContext propertyContext:
-        ShowPropertyOverview(propertyContext);
-        break;
-      case UserInterfaceNodeContext userInterfaceContext:
-        ShowUserInterface(userInterfaceContext);
-        break;
-      case MethodNodeContext methodContext:
-        ShowMethodOverview(methodContext);
-        ShowMethodCalls(methodContext);
-        ShowControlFlow(methodContext);
-        relationsAvailable = true;
-        flowAvailable = true;
-        break;
+      ClearDetails();
+      var relationsAvailable = false;
+      var flowAvailable = false;
+
+      switch (node?.Tag)
+      {
+        case ProjectStructure project:
+          ShowProjectOverview(project);
+          _pendingRelations = () => ShowProjectDependency(project);
+          relationsAvailable = true;
+          break;
+        case TypeNodeContext typeContext:
+          ShowClassOverview(typeContext);
+          _pendingRelations = () => ShowClassDependency(typeContext);
+          relationsAvailable = true;
+          break;
+        case FieldsNodeContext fieldsContext:
+          ShowFieldsOverview(fieldsContext);
+          break;
+        case PropertiesNodeContext propertiesContext:
+          ShowPropertiesOverview(propertiesContext);
+          break;
+        case FieldNodeContext fieldContext:
+          ShowFieldOverview(fieldContext);
+          break;
+        case PropertyNodeContext propertyContext:
+          ShowPropertyOverview(propertyContext);
+          break;
+        case UserInterfaceNodeContext userInterfaceContext:
+          ShowUserInterface(userInterfaceContext);
+          break;
+        case MethodNodeContext methodContext:
+          ShowMethodOverview(methodContext);
+          _pendingRelations = () => ShowMethodCalls(methodContext);
+          _pendingFlow = () => ShowControlFlow(methodContext);
+          _exportFlowImageMenuItem.Enabled = _exportFlowDiagramMenuItem.Enabled =
+              methodContext.Project.ControlFlows.Any(flow => flow.MethodId == methodContext.Method.SymbolId);
+          relationsAvailable = true;
+          flowAvailable = true;
+          break;
+      }
+
+      RestoreSelectedTab(previousTab, relationsAvailable, flowAvailable);
+    }
+    finally
+    {
+      _updatingDetails = false;
     }
 
-    RestoreSelectedTab(previousTab, relationsAvailable, flowAvailable);
+    EnsureSelectedGraphLoaded();
+  }
+
+  private void EnsureSelectedGraphLoaded()
+  {
+    if (_updatingDetails)
+    {
+      return;
+    }
+
+    if (_detailsTabs.SelectedTab == _relationsTab && _pendingRelations is { } showRelations)
+    {
+      _pendingRelations = null;
+      showRelations();
+    }
+    else if (_detailsTabs.SelectedTab == _flowTab && _pendingFlow is { } showFlow)
+    {
+      _pendingFlow = null;
+      showFlow();
+    }
   }
 
   private void ShowClassOverview(TypeNodeContext context)
@@ -932,6 +976,8 @@ public sealed class MainForm : Form
 
   private void ClearDetails()
   {
+    _pendingRelations = null;
+    _pendingFlow = null;
     _exportFlowImageMenuItem.Enabled = false;
     _exportFlowDiagramMenuItem.Enabled = false;
     _activeFieldsContext = null;

@@ -14,7 +14,7 @@ internal sealed class FieldListView : UserControl
     Text = "Fields"
   };
 
-  private readonly DataGridView _fieldsGrid = new()
+  private readonly VirtualModelGrid<FieldStructure> _fieldsGrid = new()
   {
     AllowUserToAddRows = false,
     AllowUserToDeleteRows = false,
@@ -51,19 +51,13 @@ internal sealed class FieldListView : UserControl
     _fieldsGrid.DefaultCellStyle.SelectionForeColor = SystemColors.HighlightText;
     _fieldsGrid.GridColor = SystemColors.ControlLight;
 
-    AddColumn("Name", 115, 115);
-    AddColumn("Type", 145, 140);
-    AddColumn("Accessibility", 90, 95);
-    AddColumn("Modifiers", 105, 105);
-    AddColumn("Initializer", 170, 150);
+    _fieldsGrid.AddColumn("Name", field => field.Name, 115, 115);
+    _fieldsGrid.AddColumn("Type", field => field.Type, 145, 140);
+    _fieldsGrid.AddColumn("Accessibility", field => field.Accessibility, 90, 95);
+    _fieldsGrid.AddColumn("Modifiers", FormatModifiers, 105, 105);
+    _fieldsGrid.AddColumn("Initializer", field => field.Initializer ?? string.Empty, 170, 150);
 
-    _fieldsGrid.CellDoubleClick += (_, args) =>
-    {
-      if (args.RowIndex >= 0 && _fieldsGrid.Rows[args.RowIndex].Tag is FieldStructure field)
-      {
-        FieldActivated?.Invoke(field);
-      }
-    };
+    _fieldsGrid.ItemActivated += field => FieldActivated?.Invoke(field);
 
     Controls.Add(_fieldsGrid);
     Controls.Add(_heading);
@@ -73,38 +67,14 @@ internal sealed class FieldListView : UserControl
 
   public void ShowFields(IReadOnlyList<FieldStructure> fields)
   {
-    _fieldsGrid.Rows.Clear();
     _heading.Text = $"Fields ({fields.Count})";
-
-    foreach (var field in fields)
-    {
-      var rowIndex = _fieldsGrid.Rows.Add(
-          field.Name,
-          field.Type,
-          field.Accessibility,
-          FormatModifiers(field),
-          field.Initializer ?? string.Empty);
-      _fieldsGrid.Rows[rowIndex].Tag = field;
-    }
-
-    _fieldsGrid.ClearSelection();
+    _fieldsGrid.SetItems(fields);
   }
 
   public void ClearFields()
   {
-    _fieldsGrid.Rows.Clear();
+    _fieldsGrid.SetItems(Array.Empty<FieldStructure>());
     _heading.Text = "Fields";
-  }
-
-  private void AddColumn(string headerText, float fillWeight, int minimumWidth)
-  {
-    _fieldsGrid.Columns.Add(new DataGridViewTextBoxColumn
-    {
-      HeaderText = headerText,
-      FillWeight = fillWeight,
-      MinimumWidth = minimumWidth,
-      SortMode = DataGridViewColumnSortMode.Automatic
-    });
   }
 
   private static string FormatModifiers(FieldStructure field)

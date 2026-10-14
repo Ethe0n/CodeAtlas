@@ -5,7 +5,7 @@ namespace CodeAtlas.UI;
 internal sealed class UserInterfaceView : UserControl
 {
   private readonly UiPreviewCanvas _preview = new() { Dock = DockStyle.Fill };
-  private readonly DataGridView _itemsGrid = new()
+  private readonly VirtualModelGrid<UiItemRow> _itemsGrid = new()
   {
     AllowUserToAddRows = false,
     AllowUserToDeleteRows = false,
@@ -42,22 +42,22 @@ internal sealed class UserInterfaceView : UserControl
     _itemsGrid.DefaultCellStyle.SelectionForeColor = SystemColors.HighlightText;
     _itemsGrid.GridColor = SystemColors.ControlLight;
 
-    AddColumn("Control", 120, 110);
-    AddColumn("Type", 125, 110);
-    AddColumn("Event", 95, 85);
-    AddColumn("Handler", 170, 150);
+    _itemsGrid.AddColumn("Control", row => row.ControlName, 120, 110);
+    _itemsGrid.AddColumn("Type", row => row.TypeName, 125, 110);
+    _itemsGrid.AddColumn("Event", row => row.Handler?.EventName ?? string.Empty, 95, 85);
+    _itemsGrid.AddColumn("Handler", row => row.Handler?.HandlerMethodName ?? string.Empty, 170, 150);
 
-    _itemsGrid.CellDoubleClick += (_, args) =>
+    _itemsGrid.ItemActivated += row =>
     {
-      if (args.RowIndex >= 0 &&
-          _itemsGrid.Rows[args.RowIndex].Tag is UiItemRow { Handler: not null } row)
+      if (row.Handler is not null)
       {
         MethodSelected?.Invoke(row.Handler.HandlerMethodSymbolId);
       }
     };
     _itemsGrid.SelectionChanged += (_, _) =>
     {
-      if (_synchronizingSelection || _itemsGrid.CurrentRow?.Tag is not UiItemRow row)
+      if (_synchronizingSelection ||
+          _itemsGrid.GetItem(_itemsGrid.CurrentCell?.RowIndex ?? -1) is not { } row)
       {
         return;
       }
@@ -86,7 +86,7 @@ internal sealed class UserInterfaceView : UserControl
   public void ShowType(TypeStructure type)
   {
     _preview.ShowType(type);
-    _itemsGrid.Rows.Clear();
+    var rows = new List<UiItemRow>();
 
     var handlersByControl = type.UiEventHandlers
         .ToLookup(handler => NormalizeControlName(handler.ControlName), StringComparer.OrdinalIgnoreCase);
@@ -100,58 +100,51 @@ internal sealed class UserInterfaceView : UserControl
       var handlers = handlersByControl[control.Name].ToArray();
       if (handlers.Length == 0)
       {
-        AddRow(control.Name, ShortTypeName(control.Type), null);
+        rows.Add(new UiItemRow(control.Name, ShortTypeName(control.Type), null));
         continue;
       }
 
       foreach (var handler in handlers)
       {
-        AddRow(control.Name, ShortTypeName(control.Type), handler);
+        rows.Add(new UiItemRow(control.Name, ShortTypeName(control.Type), handler));
       }
     }
 
     foreach (var handler in type.UiEventHandlers.Where(handler =>
                  !knownControls.Contains(NormalizeControlName(handler.ControlName))))
     {
-      AddRow(NormalizeControlName(handler.ControlName), "(unknown)", handler);
+      rows.Add(new UiItemRow(NormalizeControlName(handler.ControlName), "(unknown)", handler));
     }
 
-    _itemsGrid.ClearSelection();
+    _itemsGrid.SetItems(rows);
   }
 
   public void ClearView()
   {
     _preview.ClearPreview();
-    _itemsGrid.Rows.Clear();
-  }
-
-  private void AddRow(string controlName, string typeName, UiEventHandlerInfo? handler)
-  {
-    var rowIndex = _itemsGrid.Rows.Add(
-        controlName,
-        typeName,
-        handler?.EventName ?? string.Empty,
-        handler?.HandlerMethodName ?? string.Empty);
-    _itemsGrid.Rows[rowIndex].Tag = new UiItemRow(controlName, handler);
+    _itemsGrid.SetItems(Array.Empty<UiItemRow>());
   }
 
   private void SelectControlRow(string controlName)
   {
-    var row = _itemsGrid.Rows
-        .Cast<DataGridViewRow>()
-        .FirstOrDefault(candidate =>
-            candidate.Tag is UiItemRow item &&
-            string.Equals(item.ControlName, controlName, StringComparison.OrdinalIgnoreCase));
-    if (row is null)
+    var rowIndex = _itemsGrid.FindItemIndex(item =>
+        string.Equals(item.ControlName, controlName, StringComparison.OrdinalIgnoreCase));
+    if (rowIndex < 0)
     {
       return;
     }
 
     _synchronizingSelection = true;
-    _itemsGrid.ClearSelection();
-    row.Selected = true;
-    _itemsGrid.CurrentCell = row.Cells[0];
-    _synchronizingSelection = false;
+    try
+    {
+      _itemsGrid.ClearSelection();
+      _itemsGrid.CurrentCell = _itemsGrid.Rows[rowIndex].Cells[0];
+      _itemsGrid.Rows[rowIndex].Selected = true;
+    }
+    finally
+    {
+      _synchronizingSelection = false;
+    }
   }
 
   private Control CreateSection(string title, Control content)
@@ -175,17 +168,6 @@ internal sealed class UserInterfaceView : UserControl
     return panel;
   }
 
-  private void AddColumn(string headerText, float fillWeight, int minimumWidth)
-  {
-    _itemsGrid.Columns.Add(new DataGridViewTextBoxColumn
-    {
-      HeaderText = headerText,
-      FillWeight = fillWeight,
-      MinimumWidth = minimumWidth,
-      SortMode = DataGridViewColumnSortMode.Automatic
-    });
-  }
-
   private static string NormalizeControlName(string controlName)
   {
     var separatorIndex = controlName.LastIndexOf('.');
@@ -202,5 +184,5 @@ internal sealed class UserInterfaceView : UserControl
         : typeName;
   }
 
-  private sealed record UiItemRow(string ControlName, UiEventHandlerInfo? Handler);
+  private sealed record UiItemRow(string ControlName, string TypeName, UiEventHandlerInfo? Handler);
 }

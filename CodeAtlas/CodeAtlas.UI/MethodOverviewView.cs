@@ -4,14 +4,14 @@ namespace CodeAtlas.UI;
 
 internal sealed class MethodOverviewView : UserControl
 {
-  private readonly Panel _scrollPanel = new()
+  private readonly OverviewScrollPanel _scrollPanel = new()
   {
     AutoScroll = true,
     BackColor = SystemColors.Window,
     Dock = DockStyle.Fill
   };
 
-  private readonly TableLayoutPanel _content = new()
+  private readonly OverviewContentPanel _content = new()
   {
     AutoSize = true,
     AutoSizeMode = AutoSizeMode.GrowAndShrink,
@@ -41,9 +41,7 @@ internal sealed class MethodOverviewView : UserControl
       bool isEventHandler)
   {
     _content.SuspendLayout();
-    _content.Controls.Clear();
-    _content.RowStyles.Clear();
-    _content.RowCount = 0;
+    ClearOverview();
 
     AddContent(CreateHeader(method));
     AddContent(CreateSection(
@@ -81,9 +79,7 @@ internal sealed class MethodOverviewView : UserControl
 
   public void ClearOverview()
   {
-    _content.Controls.Clear();
-    _content.RowStyles.Clear();
-    _content.RowCount = 0;
+    _content.ClearContent();
   }
 
   private Control CreateHeader(MethodStructure method)

@@ -9,14 +9,14 @@ internal sealed class ClassOverviewView : UserControl
   private static readonly Color DividerColor = Color.FromArgb(224, 227, 231);
   private static readonly Color SummaryBackColor = Color.FromArgb(246, 248, 250);
 
-  private readonly Panel _scrollPanel = new()
+  private readonly OverviewScrollPanel _scrollPanel = new()
   {
     AutoScroll = true,
     BackColor = SystemColors.Window,
     Dock = DockStyle.Fill
   };
 
-  private readonly TableLayoutPanel _content = new()
+  private readonly OverviewContentPanel _content = new()
   {
     AutoSize = true,
     AutoSizeMode = AutoSizeMode.GrowAndShrink,
@@ -83,9 +83,7 @@ internal sealed class ClassOverviewView : UserControl
 
   public void ClearOverview()
   {
-    _content.Controls.Clear();
-    _content.RowStyles.Clear();
-    _content.RowCount = 0;
+    _content.ClearContent();
   }
 
   private Control CreateHeader(TypeStructure type)
@@ -195,32 +193,29 @@ internal sealed class ClassOverviewView : UserControl
 
   private Control CreateMethodsSection(IReadOnlyList<MethodStructure> methods)
   {
-    var rows = methods.Select(method => CreateMemberRow(
+    var rows = methods.Select(method => new MemberListEntry(
         FormatMethodSignature(method),
         method.Accessibility,
-        () => MethodSelected?.Invoke(method.SymbolId),
-        monospace: true));
-    return CreateSection("Methods", rows);
+        () => MethodSelected?.Invoke(method.SymbolId))).ToArray();
+    return CreateSection("Methods", CreateMemberTable(rows, monospace: true));
   }
 
   private Control CreateFieldsSection(IReadOnlyList<FieldStructure> fields)
   {
-    var rows = fields.Select(field => CreateMemberRow(
+    var rows = fields.Select(field => new MemberListEntry(
         field.Name,
         $"{ShortTypeName(field.Type)}  |  {field.Accessibility}",
-        () => FieldSelected?.Invoke(field.SymbolId),
-        monospace: true));
-    return CreateSection("Fields", rows);
+        () => FieldSelected?.Invoke(field.SymbolId))).ToArray();
+    return CreateSection("Fields", CreateMemberTable(rows, monospace: true));
   }
 
   private Control CreatePropertiesSection(IReadOnlyList<PropertyStructure> properties)
   {
-    var rows = properties.Select(property => CreateMemberRow(
+    var rows = properties.Select(property => new MemberListEntry(
         property.Name,
         $"{ShortTypeName(property.Type)}  |  {property.Accessibility}",
-        action: null,
-        monospace: true));
-    return CreateSection("Properties", rows);
+        Activate: null)).ToArray();
+    return CreateSection("Properties", CreateMemberTable(rows, monospace: true));
   }
 
   private Control CreateUserInterfaceSection(
@@ -228,30 +223,28 @@ internal sealed class ClassOverviewView : UserControl
       IReadOnlyList<UiEventHandlerInfo> eventHandlers)
   {
     var rows = controls
-        .Select(control => CreateMemberRow(
+        .Select(control => new MemberListEntry(
             control.Name,
             ShortTypeName(control.Type),
-            action: null,
-            monospace: true))
-        .Concat(eventHandlers.Select(handler => CreateMemberRow(
+            Activate: null))
+        .Concat(eventHandlers.Select(handler => new MemberListEntry(
             $"{handler.ControlName}.{handler.EventName}",
             $"-> {handler.HandlerMethodName}",
-            () => MethodSelected?.Invoke(handler.HandlerMethodSymbolId),
-            monospace: true)));
-    return CreateSection("User Interface", rows);
+            () => MethodSelected?.Invoke(handler.HandlerMethodSymbolId))))
+        .ToArray();
+    return CreateSection("User Interface", CreateMemberTable(rows, monospace: true));
   }
 
   private Control CreateSourcesSection(IReadOnlyList<string> filePaths)
   {
-    var rows = filePaths.Select(path => CreateMemberRow(
+    var rows = filePaths.Select(path => new MemberListEntry(
         Path.GetFileName(path),
         path,
-        action: null,
-        monospace: false));
-    return CreateSection("Source Files", rows);
+        Activate: null)).ToArray();
+    return CreateSection("Source Files", CreateMemberTable(rows, monospace: false));
   }
 
-  private Control CreateSection(string title, IEnumerable<Control> rows)
+  private Control CreateSection(string title, Control content)
   {
     var section = new TableLayoutPanel
     {
@@ -280,83 +273,27 @@ internal sealed class ClassOverviewView : UserControl
       Margin = new Padding(0, 0, 0, 1)
     });
 
-    var hasRows = false;
-    foreach (var row in rows)
-    {
-      section.Controls.Add(row);
-      hasRows = true;
-    }
-
-    if (!hasRows)
-    {
-      section.Controls.Add(new System.Windows.Forms.Label
-      {
-        AutoSize = true,
-        ForeColor = SecondaryTextColor,
-        Margin = new Padding(2, 10, 0, 4),
-        Text = "None"
-      });
-    }
-
+    section.Controls.Add(content);
     return section;
   }
 
-  private Control CreateMemberRow(
-      string primaryText,
-      string secondaryText,
-      Action? action,
+  private Control CreateMemberTable(
+      IReadOnlyList<MemberListEntry> entries,
       bool monospace)
   {
-    var row = new TableLayoutPanel
+    var table = new VirtualModelGrid<MemberListEntry> { Margin = Padding.Empty };
+    table.AddColumn("Name", entry => entry.PrimaryText, 58, 180);
+    table.AddColumn("Details", entry => entry.SecondaryText, 42, 130);
+    if (monospace)
     {
-      AutoSize = true,
-      AutoSizeMode = AutoSizeMode.GrowAndShrink,
-      ColumnCount = 2,
-      Cursor = action is null ? Cursors.Default : Cursors.Hand,
-      Dock = DockStyle.Top,
-      Margin = new Padding(0),
-      Padding = new Padding(2, 7, 2, 7)
-    };
-    row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 58));
-    row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42));
-
-    var primary = new System.Windows.Forms.Label
-    {
-      AutoEllipsis = true,
-      Dock = DockStyle.Fill,
-      Font = monospace ? new Font(FontFamily.GenericMonospace, Font.Size) : Font,
-      ForeColor = SystemColors.ControlText,
-      Margin = new Padding(0),
-      Text = primaryText,
-      TextAlign = ContentAlignment.MiddleLeft
-    };
-    var secondary = new System.Windows.Forms.Label
-    {
-      AutoEllipsis = true,
-      Dock = DockStyle.Fill,
-      ForeColor = SecondaryTextColor,
-      Margin = new Padding(12, 0, 0, 0),
-      Text = secondaryText,
-      TextAlign = ContentAlignment.MiddleRight
-    };
-
-    row.Controls.Add(primary, 0, 0);
-    row.Controls.Add(secondary, 1, 0);
-
-    if (action is not null)
-    {
-      AttachActivation(row, action);
-      AttachActivation(primary, action);
-      AttachActivation(secondary, action);
+      table.Columns[0].DefaultCellStyle.Font = new Font(FontFamily.GenericMonospace, Font.Size);
     }
 
-    return row;
-  }
-
-  private static void AttachActivation(Control control, Action action)
-  {
-    control.Cursor = Cursors.Hand;
-    control.DoubleClick += (_, _) => action();
+    table.Columns[1].DefaultCellStyle.ForeColor = SecondaryTextColor;
+    table.ItemActivated += entry => entry.Activate?.Invoke();
+    table.SetItems(entries);
+    table.SizeToVisibleRows(8);
+    return table;
   }
 
   private void AddContent(Control control)
@@ -407,4 +344,6 @@ internal sealed class ClassOverviewView : UserControl
   {
     return string.IsNullOrWhiteSpace(value) ? "(not available)" : value;
   }
+
+  private sealed record MemberListEntry(string PrimaryText, string SecondaryText, Action? Activate);
 }

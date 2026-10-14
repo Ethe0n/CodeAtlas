@@ -14,7 +14,7 @@ internal sealed class PropertyListView : UserControl
     Text = "Properties"
   };
 
-  private readonly DataGridView _propertiesGrid = new()
+  private readonly VirtualModelGrid<PropertyStructure> _propertiesGrid = new()
   {
     AllowUserToAddRows = false,
     AllowUserToDeleteRows = false,
@@ -51,19 +51,12 @@ internal sealed class PropertyListView : UserControl
     _propertiesGrid.DefaultCellStyle.SelectionForeColor = SystemColors.HighlightText;
     _propertiesGrid.GridColor = SystemColors.ControlLight;
 
-    AddColumn("Name", 135, 130);
-    AddColumn("Type", 165, 150);
-    AddColumn("Accessibility", 100, 100);
-    AddColumn("Modifiers", 125, 120);
+    _propertiesGrid.AddColumn("Name", property => property.Name, 135, 130);
+    _propertiesGrid.AddColumn("Type", property => property.Type, 165, 150);
+    _propertiesGrid.AddColumn("Accessibility", property => property.Accessibility, 100, 100);
+    _propertiesGrid.AddColumn("Modifiers", FormatModifiers, 125, 120);
 
-    _propertiesGrid.CellDoubleClick += (_, args) =>
-    {
-      if (args.RowIndex >= 0 &&
-          _propertiesGrid.Rows[args.RowIndex].Tag is PropertyStructure property)
-      {
-        PropertyActivated?.Invoke(property);
-      }
-    };
+    _propertiesGrid.ItemActivated += property => PropertyActivated?.Invoke(property);
 
     Controls.Add(_propertiesGrid);
     Controls.Add(_heading);
@@ -73,37 +66,14 @@ internal sealed class PropertyListView : UserControl
 
   public void ShowProperties(IReadOnlyList<PropertyStructure> properties)
   {
-    _propertiesGrid.Rows.Clear();
     _heading.Text = $"Properties ({properties.Count})";
-
-    foreach (var property in properties)
-    {
-      var rowIndex = _propertiesGrid.Rows.Add(
-          property.Name,
-          property.Type,
-          property.Accessibility,
-          FormatModifiers(property));
-      _propertiesGrid.Rows[rowIndex].Tag = property;
-    }
-
-    _propertiesGrid.ClearSelection();
+    _propertiesGrid.SetItems(properties);
   }
 
   public void ClearProperties()
   {
-    _propertiesGrid.Rows.Clear();
+    _propertiesGrid.SetItems(Array.Empty<PropertyStructure>());
     _heading.Text = "Properties";
-  }
-
-  private void AddColumn(string headerText, float fillWeight, int minimumWidth)
-  {
-    _propertiesGrid.Columns.Add(new DataGridViewTextBoxColumn
-    {
-      HeaderText = headerText,
-      FillWeight = fillWeight,
-      MinimumWidth = minimumWidth,
-      SortMode = DataGridViewColumnSortMode.Automatic
-    });
   }
 
   private static string FormatModifiers(PropertyStructure property)

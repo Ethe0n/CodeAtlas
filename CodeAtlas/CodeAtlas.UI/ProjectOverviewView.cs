@@ -12,14 +12,14 @@ internal sealed class ProjectOverviewView : UserControl
   private static readonly Color WarningColor = Color.FromArgb(174, 108, 18);
   private static readonly Color ErrorColor = Color.FromArgb(180, 54, 54);
 
-  private readonly Panel _scrollPanel = new()
+  private readonly OverviewScrollPanel _scrollPanel = new()
   {
     AutoScroll = true,
     BackColor = SystemColors.Window,
     Dock = DockStyle.Fill
   };
 
-  private readonly TableLayoutPanel _content = new()
+  private readonly OverviewContentPanel _content = new()
   {
     AutoSize = true,
     AutoSizeMode = AutoSizeMode.GrowAndShrink,
@@ -43,7 +43,7 @@ internal sealed class ProjectOverviewView : UserControl
   public void ShowProject(ProjectStructure project)
   {
     var types = project.Types;
-    var methods = types.SelectMany(type => type.Methods).Where(method => !method.IsGenerated).ToArray();
+    var methodCount = types.Sum(type => type.Methods.Count(method => !method.IsGenerated));
     var generatedMethods = types
         .SelectMany(type => type.GeneratedMethods)
         .Concat(types.SelectMany(type => type.Methods).Where(method => method.IsGenerated))
@@ -74,7 +74,7 @@ internal sealed class ProjectOverviewView : UserControl
     AddContent(CreateHeader(project));
     AddContent(CreateStructureSummary(
         types.Count,
-        methods.Length,
+        methodCount,
         fields,
         properties,
         controlCount,
@@ -103,9 +103,7 @@ internal sealed class ProjectOverviewView : UserControl
 
   public void ClearOverview()
   {
-    _content.Controls.Clear();
-    _content.RowStyles.Clear();
-    _content.RowCount = 0;
+    _content.ClearContent();
   }
 
   private Control CreateHeader(ProjectStructure project)
@@ -223,85 +221,60 @@ internal sealed class ProjectOverviewView : UserControl
 
   private Control CreateTypesSection(IReadOnlyList<TypeStructure> types)
   {
-    var table = new TableLayoutPanel
-    {
-      AutoSize = true,
-      AutoSizeMode = AutoSizeMode.GrowAndShrink,
-      ColumnCount = 6,
-      Dock = DockStyle.Top,
-      Margin = new Padding(0)
-    };
-    table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
-    table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 15));
-    table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 12));
-    table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 11));
-    table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 12));
-    table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 10));
-    AddTypeTableRow(table, "Name", "Kind", "Methods", "Fields", "Properties", "UI", true, null);
-
     var duplicateNames = types
         .GroupBy(type => type.Name, StringComparer.Ordinal)
         .Where(group => group.Count() > 1)
         .Select(group => group.Key)
         .ToHashSet(StringComparer.Ordinal);
-    foreach (var entry in OrderTypes(types))
+    var table = new VirtualModelGrid<TypeListEntry> { Margin = Padding.Empty };
+    table.AddColumn("Name", entry =>
+        new string(' ', entry.Depth * 3) + (duplicateNames.Contains(entry.Type.Name)
+            ? entry.Type.FullName : entry.Type.Name), 40, 180);
+    table.AddColumn("Kind", entry => entry.Type.Kind, 15, 85);
+    table.AddColumn("Methods", entry => entry.MethodCount, 12, 70);
+    table.AddColumn("Fields", entry => entry.FieldCount, 11, 65);
+    table.AddColumn("Properties", entry => entry.PropertyCount, 12, 85);
+    table.AddColumn("UI", entry => entry.Type.UiControls.Count, 10, 45);
+    for (var index = 2; index < table.Columns.Count; index++)
     {
-      var type = entry.Type;
-      var displayName = duplicateNames.Contains(type.Name) ? type.FullName : type.Name;
-      displayName = $"{new string(' ', entry.Depth * 3)}{displayName}";
-      AddTypeTableRow(
-          table,
-          displayName,
-          type.Kind,
-          FormatCount(type.Methods.Count(method => !method.IsGenerated)),
-          FormatCount(type.Fields.Count(field => !field.IsGenerated)),
-          FormatCount(type.Properties.Count(property => !property.IsGenerated)),
-          FormatCount(type.UiControls.Count),
-          false,
-          () => TypeSelected?.Invoke(type.SymbolId));
+      table.Columns[index].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
     }
 
+    table.CellFormatting += (_, args) =>
+    {
+      if (args.ColumnIndex >= 2 && args.Value is int count)
+      {
+        args.Value = FormatCount(count);
+        args.FormattingApplied = true;
+      }
+    };
+    table.ItemActivated += entry => TypeSelected?.Invoke(entry.Type.SymbolId);
+    table.SetItems(OrderTypes(types));
+    table.SizeToVisibleRows(12);
     return CreateSection("Types", table);
   }
 
   private Control CreateDiagnosticsSection(IReadOnlyList<ProjectAnalysisDiagnostic> diagnostics)
   {
-    var list = new TableLayoutPanel
+    var list = new VirtualModelGrid<ProjectAnalysisDiagnostic>();
+    list.AddColumn("Stage", diagnostic => diagnostic.Stage, 20, 125);
+    list.AddColumn("Message", diagnostic => diagnostic.Message, 80, 300);
+    list.CellFormatting += (_, args) =>
     {
-      AutoSize = true,
-      AutoSizeMode = AutoSizeMode.GrowAndShrink,
-      ColumnCount = 2,
-      Dock = DockStyle.Top
-    };
-    list.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 125));
-    list.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+      if (list.GetItem(args.RowIndex) is not { } diagnostic || args.CellStyle is not { } style)
+      {
+        return;
+      }
 
-    foreach (var diagnostic in diagnostics)
-    {
-      var color = diagnostic.Severity switch
+      style.ForeColor = diagnostic.Severity switch
       {
         ProjectAnalysisDiagnosticSeverity.Error => ErrorColor,
         ProjectAnalysisDiagnosticSeverity.Warning => WarningColor,
         _ => AccentColor
       };
-      list.Controls.Add(new System.Windows.Forms.Label
-      {
-        AutoSize = true,
-        Font = new Font(Font, FontStyle.Bold),
-        ForeColor = color,
-        Margin = new Padding(0, 7, 12, 7),
-        Text = diagnostic.Stage
-      });
-      list.Controls.Add(new System.Windows.Forms.Label
-      {
-        AutoSize = true,
-        Dock = DockStyle.Fill,
-        ForeColor = SystemColors.ControlText,
-        Margin = new Padding(0, 7, 0, 7),
-        MaximumSize = new Size(760, 0),
-        Text = diagnostic.Message
-      });
-    }
+    };
+    list.SetItems(diagnostics);
+    list.SizeToVisibleRows();
 
     return CreateSection("Diagnostics", list);
   }
@@ -396,55 +369,6 @@ internal sealed class ProjectOverviewView : UserControl
     return section;
   }
 
-  private void AddTypeTableRow(
-      TableLayoutPanel table,
-      string name,
-      string kind,
-      string methods,
-      string fields,
-      string properties,
-      string uiControls,
-      bool isHeader,
-      Action? action)
-  {
-    var rowIndex = table.RowCount++;
-    table.RowStyles.Add(new RowStyle(SizeType.Absolute, isHeader ? 30 : 34));
-    var values = new[] { name, kind, methods, fields, properties, uiControls };
-    for (var columnIndex = 0; columnIndex < values.Length; columnIndex++)
-    {
-      var label = new System.Windows.Forms.Label
-      {
-        AutoEllipsis = true,
-        Cursor = action is null ? Cursors.Default : Cursors.Hand,
-        Dock = DockStyle.Fill,
-        Font = isHeader ? new Font(Font, FontStyle.Bold) : Font,
-        ForeColor = isHeader ? SecondaryTextColor : SystemColors.ControlText,
-        Margin = new Padding(columnIndex == 0 ? 3 : 8, 0, 3, 0),
-        Text = values[columnIndex],
-        TextAlign = columnIndex < 2 ? ContentAlignment.MiddleLeft : ContentAlignment.MiddleRight
-      };
-      if (action is not null)
-      {
-        label.DoubleClick += (_, _) => action();
-      }
-
-      table.Controls.Add(label, columnIndex, rowIndex);
-    }
-
-    if (!isHeader)
-    {
-      var divider = new Panel
-      {
-        BackColor = DividerColor,
-        Dock = DockStyle.Bottom,
-        Height = 1,
-        Margin = new Padding(0)
-      };
-      table.Controls.Add(divider, 0, rowIndex);
-      table.SetColumnSpan(divider, table.ColumnCount);
-    }
-  }
-
   private void AddContent(Control control)
   {
     var row = _content.RowCount++;
@@ -527,5 +451,12 @@ internal sealed class ProjectOverviewView : UserControl
     };
   }
 
-  private sealed record TypeListEntry(TypeStructure Type, int Depth);
+  private sealed record TypeListEntry(TypeStructure Type, int Depth)
+  {
+    public int MethodCount { get; } = Type.Methods.Count(method => !method.IsGenerated);
+
+    public int FieldCount { get; } = Type.Fields.Count(field => !field.IsGenerated);
+
+    public int PropertyCount { get; } = Type.Properties.Count(property => !property.IsGenerated);
+  }
 }
