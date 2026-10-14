@@ -6,6 +6,7 @@ namespace CodeAtlas.UI;
 public sealed class MainForm : Form
 {
   private readonly TreeView _projectExplorer = new();
+  private readonly ProjectSearchView _projectSearchView = new() { Enabled = false };
   private readonly TabControl _detailsTabs = new();
   private readonly TabPage _overviewTab = new("Overview");
   private readonly TabPage _relationsTab = new("Relations");
@@ -66,6 +67,11 @@ public sealed class MainForm : Form
     _fieldListView.FieldActivated += ShowFieldFromList;
     _propertyListView.PropertyActivated += ShowPropertyFromList;
     _userInterfaceView.MethodSelected += SelectMethodNodeBySymbolId;
+    _projectSearchView.NodeSelected += node =>
+    {
+      node.EnsureVisible();
+      _projectExplorer.SelectedNode = node;
+    };
   }
 
   protected override void OnShown(EventArgs e)
@@ -112,6 +118,7 @@ public sealed class MainForm : Form
       }
     };
     _mainSplitContainer.Panel1.Controls.Add(_projectExplorer);
+    _mainSplitContainer.Panel1.Controls.Add(_projectSearchView);
 
     _detailsTabs.Dock = DockStyle.Fill;
     _overviewText.Dock = DockStyle.Fill;
@@ -236,6 +243,7 @@ public sealed class MainForm : Form
   {
     UseWaitCursor = true;
     _projectExplorer.Enabled = false;
+    _projectSearchView.Enabled = false;
     _openSolutionMenuItem.Enabled = false;
     _statusLabel.Text = "Reading solution...";
     _analysisProgressBar.Style = ProgressBarStyle.Marquee;
@@ -248,6 +256,7 @@ public sealed class MainForm : Form
   private void EndAnalysisUi()
   {
     _projectExplorer.Enabled = true;
+    _projectSearchView.Enabled = _projectExplorer.Nodes.Count > 0;
     _openSolutionMenuItem.Enabled = true;
     _analysisProgressBar.Visible = false;
     _cancelAnalysisButton.Visible = false;
@@ -332,6 +341,50 @@ public sealed class MainForm : Form
     }
 
     _projectExplorer.EndUpdate();
+    _projectSearchView.SetEntries(CreateSearchEntries(_projectExplorer.Nodes));
+    _projectSearchView.Enabled = true;
+  }
+
+  private static IReadOnlyList<ProjectSearchEntry> CreateSearchEntries(TreeNodeCollection nodes)
+  {
+    var entries = new List<ProjectSearchEntry>();
+    foreach (TreeNode node in nodes)
+    {
+      switch (node.Tag)
+      {
+        case ProjectStructure project:
+          entries.Add(new ProjectSearchEntry(
+              "Project", project.Name, project.Name, project.Name,
+              project.FilePath ?? string.Empty, node));
+          break;
+        case TypeNodeContext context:
+          entries.Add(new ProjectSearchEntry(
+              context.Type.Kind, context.Type.Name, context.Type.FullName,
+              context.Type.Name, $"{context.Project.Name} / {context.Type.FullName}", node));
+          break;
+        case MethodNodeContext context:
+          entries.Add(new ProjectSearchEntry(
+              "Method", context.Method.Name, $"{context.Type.FullName}.{context.Method.Name}",
+              FormatMethodSignature(context.Method),
+              $"{context.Project.Name} / {context.Type.FullName}", node));
+          break;
+      }
+
+      entries.AddRange(CreateSearchEntries(node.Nodes));
+    }
+
+    return entries;
+  }
+
+  protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+  {
+    if (keyData == (Keys.Control | Keys.F) && _projectSearchView.Enabled)
+    {
+      _projectSearchView.FocusSearch();
+      return true;
+    }
+
+    return base.ProcessCmdKey(ref msg, keyData);
   }
 
   private static TreeNode CreateProjectNode(ProjectStructure project)
