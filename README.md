@@ -15,7 +15,7 @@ CodeAtlas - VB(Visual Basic) .net code analyzer
 - [ ] 트리 레벨 0, 1, 2 조절하기
 - [ ] UI Controls, UI Event handlers 좀 더 보기 편하게
 - [ ] data.json 파일로 빼서 매번 로딩 반복 안하도록 하기
-- [ ] 검색 기능 추가
+- [x] 검색 기능 추가
 - [ ] method flow chart 로컬 AI와 연동
 
 # Issue
@@ -30,10 +30,10 @@ CodeAtlas - VB(Visual Basic) .net code analyzer
 - [ ] UI preview 작동 제대로 안 함
 - [ ] draw.io export 시 invalid data 오류 발생(웹 버전은 정상 작동)
 - [ ] project overview, field table 등등 내용이 많으면 로딩 및 스크롤 시 렉 발생
-- [ ] 가끔 flow chart에서 main graph와 연결 안된 sub graph가 있음.
-  - [ ] Try Catch
-  - [ ] Using 
-- [ ] 변수에 문자열 대입 시, 따옴표 생략되는 문제(Ex. [a = ""]이면 [a = ] 으로 표시됨)
-- [ ] OR나 AND로 길게 연결된 조건문이 있는 경우 한 줄로 길게 나열됨(특정 단위로 줄 나눔 필요)
+- [x] 가끔 flow chart에서 main graph와 연결 안된 sub graph가 있음.
+  - [x] Try Catch
+  - [x] Using 
+- [x] 변수에 문자열 대입 시, 따옴표 생략되는 문제(Ex. [a = ""]이면 [a = ] 으로 표시됨)
+- [x] OR나 AND로 길게 연결된 조건문이 있는 경우 한 줄로 길게 나열됨(특정 단위로 줄 나눔 필요)
 - [ ] 함수의 Relations에서 파라미터 리스트가 긴 경우 한 줄로 길게 나열됨(특정 단위로 줄 나눔 필요)
 - [ ] 클래스 파일은 정상 분석되지만 모듈 파일은 존재하지 않음.
