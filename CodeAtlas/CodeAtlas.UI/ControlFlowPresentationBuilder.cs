@@ -257,23 +257,35 @@ internal sealed class ControlFlowPresentationBuilder
       }
 
       edges.Remove(originalEdge);
+      var isConditional = originalEdge.Kind is "ConditionalTrue" or "ConditionalFalse" or "Conditional";
       var previousNodeId = sourceId;
       foreach (var finallyRegion in finallyRegions)
       {
         var finallyEntryId = chains[finallyRegion.FirstBlockId][0].Id;
-        AddEdgeIfMissing(
-            edges,
-            new ControlFlowPresentationEdge(
+        // The branch is evaluated before cleanup, not when finally completes.
+        var entryEdge = isConditional && previousNodeId == sourceId
+            ? originalEdge with { To = finallyEntryId, IsBackEdge = false }
+            : new ControlFlowPresentationEdge(
                 previousNodeId,
                 finallyEntryId,
                 "FallThrough",
                 Condition: null,
                 DisplayLabel: null,
-                IsBackEdge: false));
+                IsBackEdge: false);
+        AddEdgeIfMissing(edges, entryEdge);
         previousNodeId = chains[finallyRegion.LastBlockId][^1].Id;
       }
 
-      AddEdgeIfMissing(edges, originalEdge with { From = previousNodeId });
+      var continuationEdge = isConditional
+          ? new ControlFlowPresentationEdge(
+              previousNodeId,
+              targetId,
+              "FallThrough",
+              Condition: null,
+              DisplayLabel: null,
+              IsBackEdge: originalEdge.IsBackEdge)
+          : originalEdge with { From = previousNodeId };
+      AddEdgeIfMissing(edges, continuationEdge);
     }
   }
 
