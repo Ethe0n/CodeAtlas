@@ -42,7 +42,8 @@ public sealed class ControlFlowGraphView : UserControl
     Graph graph,
     ControlFlowPresentation presentation,
     IReadOnlyList<SelectCaseFanout> selectCaseFanouts,
-    IReadOnlyList<SelectCaseMerge> selectCaseMerges)
+    IReadOnlyList<SelectCaseMerge> selectCaseMerges,
+    IReadOnlyDictionary<string, string> conditionalMergeTargets)
   {
     foreach (var edge in presentation.Edges)
     {
@@ -115,7 +116,7 @@ public sealed class ControlFlowGraphView : UserControl
         }
       }
 
-      ApplySelectCaseLaneConstraints(graph, presentation, fanout);
+      ApplySelectCaseLaneConstraints(graph, presentation, fanout, conditionalMergeTargets);
     }
 
     foreach (var merge in selectCaseMerges)
@@ -172,6 +173,11 @@ public sealed class ControlFlowGraphView : UserControl
         if (caseNode is not null && firstSuccessors.Length == 1)
         {
           graph.LayerConstraints.AddUpDownVerticalConstraint(caseNode, firstSuccessors[0]);
+        }
+
+        if (caseNode is not null && globalTap is not null)
+        {
+          graph.LayerConstraints.AddUpDownVerticalConstraint(caseNode, globalTap);
         }
 
         if (lane.OutputId != lane.GlobalTapId &&
@@ -279,6 +285,11 @@ public sealed class ControlFlowGraphView : UserControl
     }
 
     var selectCaseFanouts = CreateSelectCaseFanouts(graph, presentation);
+    if (selectCaseFanouts.Count > 0 && graph.LayoutAlgorithmSettings is SugiyamaLayoutSettings settings)
+    {
+      graph.Attr.NodeSeparation = settings.NodeSeparation = 32;
+      graph.Attr.LayerSeparation = settings.LayerSeparation = 50;
+    }
     var selectCaseMerges = CreateSelectCaseMerges(
         graph,
         presentation,
@@ -304,6 +315,7 @@ public sealed class ControlFlowGraphView : UserControl
           edge.From,
           FormatEdgeLabel(edge),
           edge.To);
+      graphEdge.UserData = edge;
       ConfigureEdge(graphEdge, edge);
     }
 
@@ -317,14 +329,33 @@ public sealed class ControlFlowGraphView : UserControl
       ConfigureSelectCaseMergeEdges(graph, merge);
     }
 
+    var conditionalMergeTargets = CreateConditionalMergeRouting(graph, presentation, selectCaseFanouts);
     ApplyLayoutConstraints(
         graph,
         presentation,
         selectCaseFanouts,
-        selectCaseMerges);
+        selectCaseMerges,
+        conditionalMergeTargets);
     ApplyExceptionRegionConstraints(graph, presentation);
 
-    _viewer.Graph = graph;
+    if (selectCaseFanouts.Count > 0)
+    {
+      _viewer.CalculateLayout(graph);
+      RouteSelectCaseEdges(graph);
+      _viewer.NeedToCalculateLayout = false;
+      try
+      {
+        _viewer.Graph = graph;
+      }
+      finally
+      {
+        _viewer.NeedToCalculateLayout = true;
+      }
+    }
+    else
+    {
+      _viewer.Graph = graph;
+    }
     _viewer.Visible = true;
     _emptyLabel.Visible = false;
     BeginInvoke(new Action(FitGraphToViewport));
@@ -450,6 +481,85 @@ public sealed class ControlFlowGraphView : UserControl
     };
   }
 
+  private static void RouteSelectCaseEdges(Graph graph)
+  {
+    var geometry = graph.GeometryGraph!;
+    var boundaries = geometry.Nodes.ToDictionary(node => node, node => node.BoundaryCurve);
+    var edgeStates = geometry.Edges.Select(edge => new
+    {
+      Edge = edge,
+      edge.Curve,
+      edge.UnderlyingPolyline,
+      edge.SourcePort,
+      edge.TargetPort,
+      SourceTip = edge.EdgeGeometry.SourceArrowhead?.TipPosition,
+      TargetTip = edge.EdgeGeometry.TargetArrowhead?.TipPosition,
+      Labels = edge.Labels.Select(label => (Label: label, label.Center)).ToArray()
+    }).ToArray();
+
+    try
+    {
+      // Rectangular routing obstacles avoid MSAGL's diamond-port direction error.
+      // Restore the real boundaries afterwards; only edge geometry is changed.
+      foreach (var node in geometry.Nodes)
+      {
+        node.BoundaryCurve = Microsoft.Msagl.Core.Geometry.Curves.CurveFactory
+            .CreateRectangle(node.BoundingBox);
+      }
+
+      foreach (var edge in geometry.Edges)
+      {
+        edge.SourcePort = null;
+        edge.TargetPort = null;
+      }
+
+      var routing = graph.LayoutAlgorithmSettings.EdgeRoutingSettings;
+      routing.EdgeRoutingMode = Microsoft.Msagl.Core.Routing.EdgeRoutingMode.Rectilinear;
+      routing.Padding = 6;
+      routing.CornerRadius = 4;
+      Microsoft.Msagl.Miscellaneous.LayoutHelpers.RouteAndLabelEdges(
+          geometry, graph.LayoutAlgorithmSettings, geometry.Edges, 0, null);
+    }
+    catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
+    {
+      System.Diagnostics.Debug.WriteLine($"CFG routing retained the original layout: {exception.Message}");
+      foreach (var state in edgeStates)
+      {
+        state.Edge.Curve = state.Curve;
+        state.Edge.UnderlyingPolyline = state.UnderlyingPolyline;
+        if (state.SourceTip is { } sourceTip)
+        {
+          state.Edge.EdgeGeometry.SourceArrowhead.TipPosition = sourceTip;
+        }
+
+        if (state.TargetTip is { } targetTip)
+        {
+          state.Edge.EdgeGeometry.TargetArrowhead.TipPosition = targetTip;
+        }
+
+        foreach (var (label, center) in state.Labels)
+        {
+          label.Center = center;
+        }
+      }
+    }
+    finally
+    {
+      foreach (var (node, boundary) in boundaries)
+      {
+        node.BoundaryCurve = boundary;
+      }
+
+      foreach (var state in edgeStates)
+      {
+        state.Edge.SourcePort = state.SourcePort;
+        state.Edge.TargetPort = state.TargetPort;
+      }
+
+      geometry.UpdateBoundingBox();
+    }
+  }
+
   private static void ApplyExceptionRegionConstraints(
       Graph graph,
       ControlFlowPresentation presentation)
@@ -538,14 +648,19 @@ public sealed class ControlFlowGraphView : UserControl
       graphics.SmoothingMode = SmoothingMode.AntiAlias;
       graphics.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
 
-      var renderer = new GraphRenderer(graph);
-      renderer.Render(
-          graphics,
-          new Rectangle(
-              ExportMargin,
-              ExportMargin,
-              size.Width - (ExportMargin * 2),
-              size.Height - (ExportMargin * 2)));
+      // GraphRenderer.Render recalculates layout. Draw the existing viewer geometry instead.
+      using var renderer = new GViewer { NeedToCalculateLayout = false };
+      renderer.Graph = graph;
+      var bounds = graph.GeometryGraph.BoundingBox;
+      var scale = Math.Min(
+          (size.Width - (ExportMargin * 2d)) / bounds.Width,
+          (size.Height - (ExportMargin * 2d)) / bounds.Height);
+      using var transform = new Matrix(
+          (float)scale, 0, 0, (float)-scale,
+          (float)((size.Width / 2d) - ((bounds.Left + (bounds.Width / 2)) * scale)),
+          (float)((size.Height / 2d) + ((bounds.Bottom + (bounds.Height / 2)) * scale)));
+      graphics.Transform = transform;
+      Draw.DrawPrecalculatedLayoutObject(graphics, renderer.ViewerGraph);
     }
 
     bitmap.Save(filePath, ImageFormat.Png);
@@ -855,10 +970,125 @@ public sealed class ControlFlowGraphView : UserControl
     return merges;
   }
 
+  private static IReadOnlyDictionary<string, string> CreateConditionalMergeRouting(
+      Graph graph,
+      ControlFlowPresentation presentation,
+      IReadOnlyList<SelectCaseFanout> fanouts)
+  {
+    var plans = new List<(string ConditionId, string TargetId, HashSet<ControlFlowPresentationEdge> Inputs)>();
+    foreach (var fanout in fanouts)
+    {
+      var groupIds = presentation.Nodes
+          .Where(node => node.ControlStructureGroupId == fanout.GroupId)
+          .Select(node => node.Id)
+          .ToHashSet(StringComparer.Ordinal);
+      foreach (var branch in fanout.Branches)
+      {
+        var depths = GetReachableDepthsWithinGroup(branch.TargetId, groupIds, presentation.Edges);
+        var laneIds = depths.Keys.ToHashSet(StringComparer.Ordinal);
+        foreach (var conditionId in laneIds)
+        {
+          var trueEdge = presentation.Edges.FirstOrDefault(edge =>
+              edge.From == conditionId && edge.Kind == "ConditionalTrue" && laneIds.Contains(edge.To));
+          var falseEdge = presentation.Edges.FirstOrDefault(edge =>
+              edge.From == conditionId && edge.Kind == "ConditionalFalse" && laneIds.Contains(edge.To));
+          if (trueEdge is null || falseEdge is null || trueEdge.To == falseEdge.To)
+          {
+            continue;
+          }
+
+          var trueBranch = GetReachableWithinGroup(trueEdge.To, laneIds, presentation.Edges);
+          var falseBranch = GetReachableWithinGroup(falseEdge.To, laneIds, presentation.Edges);
+          var targetId = trueBranch.Intersect(falseBranch, StringComparer.Ordinal)
+              .OrderBy(id => depths[id])
+              .FirstOrDefault();
+          if (targetId is null)
+          {
+            continue;
+          }
+
+          var armIds = trueBranch.Union(falseBranch, StringComparer.Ordinal)
+              .Append(conditionId).ToHashSet(StringComparer.Ordinal);
+          var inputs = presentation.Edges.Where(edge =>
+              edge.To == targetId && armIds.Contains(edge.From) && !edge.IsBackEdge &&
+              edge.Kind is "FallThrough" or "ConditionalTrue" or "ConditionalFalse")
+              .ToHashSet();
+          if (inputs.Count > 1)
+          {
+            plans.Add((conditionId, targetId, inputs));
+          }
+        }
+      }
+    }
+
+    var representedEdges = graph.Edges
+        .Where(edge => edge.UserData is ControlFlowPresentationEdge)
+        .ToDictionary(edge => edge, edge => new HashSet<ControlFlowPresentationEdge>
+        {
+          (ControlFlowPresentationEdge)edge.UserData
+        });
+    var mergeTargets = new Dictionary<string, string>(StringComparer.Ordinal);
+    // Route inner joins first, then use their output as an input to the enclosing join.
+    foreach (var plan in plans.OrderBy(plan => plan.Inputs.Count))
+    {
+      var inputs = graph.Edges.Where(edge => edge.Target == plan.TargetId &&
+          representedEdges.TryGetValue(edge, out var represented) && represented.IsSubsetOf(plan.Inputs))
+          .ToArray();
+      if (inputs.Length == 0 ||
+          !inputs.SelectMany(edge => representedEdges[edge]).ToHashSet().SetEquals(plan.Inputs))
+      {
+        continue;
+      }
+
+      if (inputs.Length == 1)
+      {
+        mergeTargets[plan.ConditionId] = inputs[0].Source;
+        continue;
+      }
+
+      var junctionId = $"{plan.ConditionId}_branch_merge";
+      var junction = graph.AddNode(junctionId);
+      ConfigureInvisibleRoutingNode(junction);
+      foreach (var input in inputs)
+      {
+        graph.RemoveEdge(input);
+        var routed = graph.AddEdge(input.Source, junctionId);
+        routed.Attr = input.Attr;
+        routed.Attr.ArrowheadAtTarget = ArrowStyle.None;
+        routed.Label = input.Label;
+        if (routed.Label is not null)
+        {
+          routed.Label.Owner = routed;
+        }
+
+        representedEdges[routed] = representedEdges[input];
+        graph.LayerConstraints.AddUpDownConstraint(graph.FindNode(input.Source), junction);
+      }
+
+      var output = graph.AddEdge(junctionId, plan.TargetId);
+      ConfigureMergeRoutingEdge(output, true);
+      representedEdges[output] = plan.Inputs;
+      graph.LayerConstraints.AddUpDownConstraint(junction, graph.FindNode(plan.TargetId));
+      mergeTargets[plan.ConditionId] = junctionId;
+    }
+
+    var junctionIds = mergeTargets.Values.ToHashSet(StringComparer.Ordinal);
+    foreach (var edge in graph.Edges.Where(edge => junctionIds.Contains(edge.Source)))
+    {
+      if (graph.FindNode(edge.Target) is { } target && target.Attr.Shape != Shape.Point)
+      {
+        graph.LayerConstraints.AddUpDownVerticalConstraint(graph.FindNode(edge.Source), target);
+      }
+    }
+
+    return mergeTargets;
+  }
+
   private static void ApplySelectCaseLaneConstraints(
       Graph graph,
       ControlFlowPresentation presentation,
-      SelectCaseFanout fanout)
+      SelectCaseFanout fanout,
+      IReadOnlyDictionary<string, string> conditionalMergeTargets)
   {
     var groupNodeIds = presentation.Nodes
         .Where(node => string.Equals(
@@ -867,15 +1097,39 @@ public sealed class ControlFlowGraphView : UserControl
             StringComparison.Ordinal))
         .Select(node => node.Id)
         .ToHashSet(StringComparer.Ordinal);
-    var nodeOrder = presentation.Nodes
-        .Select((node, index) => (node.Id, index))
-        .ToDictionary(item => item.Id, item => item.index, StringComparer.Ordinal);
     var laneDepths = fanout.Branches
         .Select(branch => GetReachableDepthsWithinGroup(
             branch.TargetId,
             groupNodeIds,
             presentation.Edges))
         .ToArray();
+
+    void SeparateBranches(IEnumerable<string> leftIds, IEnumerable<string> rightIds)
+    {
+      foreach (var leftId in leftIds)
+      {
+        foreach (var rightId in rightIds)
+        {
+          var left = graph.FindNode(leftId);
+          var right = graph.FindNode(rightId);
+          if (left is not null && right is not null && left != right)
+          {
+            graph.LayerConstraints.AddLeftRightConstraint(left, right);
+          }
+        }
+      }
+    }
+
+    var ownershipCounts = laneDepths.SelectMany(depths => depths.Keys)
+        .GroupBy(id => id, StringComparer.Ordinal)
+        .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
+    var exclusiveLanes = laneDepths
+        .Select(depths => depths.Keys.Where(id => ownershipCounts[id] == 1).ToArray())
+        .ToArray();
+    for (var index = 0; index < exclusiveLanes.Length - 1; index++)
+    {
+      SeparateBranches(exclusiveLanes[index], exclusiveLanes[index + 1]);
+    }
 
     for (var laneIndex = 0; laneIndex < fanout.Branches.Count; laneIndex++)
     {
@@ -925,7 +1179,7 @@ public sealed class ControlFlowGraphView : UserControl
             edge.From == conditionId &&
             edge.Kind == "ConditionalFalse" &&
             laneNodeIds.Contains(edge.To));
-        if (trueEdge is null || falseEdge is null)
+        if (trueEdge is null || falseEdge is null || trueEdge.To == falseEdge.To)
         {
           continue;
         }
@@ -938,38 +1192,46 @@ public sealed class ControlFlowGraphView : UserControl
           continue;
         }
 
+        var trueBranch = GetReachableWithinGroup(trueEdge.To, laneNodeIds, presentation.Edges);
+        var falseBranch = GetReachableWithinGroup(falseEdge.To, laneNodeIds, presentation.Edges);
+        var trueArm = trueBranch.Except(falseBranch, StringComparer.Ordinal).ToArray();
+        var falseArm = falseBranch.Except(trueBranch, StringComparer.Ordinal).ToArray();
+        SeparateBranches(trueArm, falseArm);
+        var mergeId = trueBranch.Intersect(falseBranch, StringComparer.Ordinal)
+            .OrderBy(id => laneDepths[laneIndex][id])
+            .FirstOrDefault();
+        var layoutMergeId = conditionalMergeTargets.GetValueOrDefault(conditionId) ?? mergeId;
+        if (layoutMergeId is not null && graph.FindNode(layoutMergeId) is { } merge)
+        {
+          graph.LayerConstraints.AddUpDownVerticalConstraint(condition, merge);
+        }
+
+        if (trueBranch.Contains(falseEdge.To) || falseBranch.Contains(trueEdge.To))
+        {
+          continue;
+        }
+
+        graph.LayerConstraints.AddUpDownVerticalConstraint(
+            condition,
+            trueArm.Length >= falseArm.Length ? trueTarget : falseTarget);
         graph.LayerConstraints.PinNodesToSameLayer(trueTarget, falseTarget);
-        graph.LayerConstraints.AddUpDownVerticalConstraint(condition, trueTarget);
         graph.LayerConstraints.AddLeftRightConstraint(trueTarget, falseTarget);
       }
     }
 
-    var maximumDepth = laneDepths
-        .SelectMany(depths => depths.Values)
-        .DefaultIfEmpty()
-        .Max();
-
+    var maximumDepth = laneDepths.SelectMany(depths => depths.Values).DefaultIfEmpty().Max();
     for (var depth = 0; depth <= maximumDepth; depth++)
     {
-      var layerNodes = laneDepths
-          .SelectMany(depths => depths
+      var layerNodes = laneDepths.SelectMany(depths => depths
               .Where(item => item.Value == depth)
-              .OrderBy(item => nodeOrder.GetValueOrDefault(item.Key))
               .Select(item => graph.FindNode(item.Key)))
           .Where(node => node is not null)
           .Select(node => node!)
+          .Distinct()
           .ToArray();
-      if (layerNodes.Length < 2)
+      if (layerNodes.Length > 1)
       {
-        continue;
-      }
-
-      graph.LayerConstraints.PinNodesToSameLayer(layerNodes);
-      for (var index = 0; index < layerNodes.Length - 1; index++)
-      {
-        graph.LayerConstraints.AddLeftRightConstraint(
-            layerNodes[index],
-            layerNodes[index + 1]);
+        graph.LayerConstraints.PinNodesToSameLayer(layerNodes);
       }
     }
   }
@@ -979,28 +1241,33 @@ public sealed class ControlFlowGraphView : UserControl
       IReadOnlySet<string> groupNodeIds,
       IReadOnlyList<ControlFlowPresentationEdge> edges)
   {
-    var depths = new Dictionary<string, int>(StringComparer.Ordinal)
+    var reachable = GetReachableWithinGroup(startNodeId, groupNodeIds, edges);
+    var forwardEdges = edges
+        .Where(edge => !edge.IsBackEdge && reachable.Contains(edge.From) && reachable.Contains(edge.To))
+        .ToArray();
+    var successors = forwardEdges.ToLookup(edge => edge.From, StringComparer.Ordinal);
+    var incomingCounts = reachable.ToDictionary(id => id, _ => 0, StringComparer.Ordinal);
+    foreach (var edge in forwardEdges)
     {
-      [startNodeId] = 0
-    };
-    var pending = new Queue<string>();
-    pending.Enqueue(startNodeId);
+      incomingCounts[edge.To]++;
+    }
+
+    var longestDepths = reachable.ToDictionary(id => id, _ => 0, StringComparer.Ordinal);
+    var depths = new Dictionary<string, int>(StringComparer.Ordinal);
+    var pending = new Queue<string>(reachable.Where(id => incomingCounts[id] == 0));
 
     while (pending.Count > 0)
     {
       var current = pending.Dequeue();
-      foreach (var edge in edges.Where(edge =>
-          edge.From == current &&
-          !edge.IsBackEdge &&
-          groupNodeIds.Contains(edge.To)))
+      depths[current] = longestDepths[current];
+      foreach (var edge in successors[current])
       {
-        if (depths.ContainsKey(edge.To))
+        // A merge must follow every forward predecessor, not just the shortest branch.
+        longestDepths[edge.To] = Math.Max(longestDepths[edge.To], depths[current] + 1);
+        if (--incomingCounts[edge.To] == 0)
         {
-          continue;
+          pending.Enqueue(edge.To);
         }
-
-        depths.Add(edge.To, depths[current] + 1);
-        pending.Enqueue(edge.To);
       }
     }
 

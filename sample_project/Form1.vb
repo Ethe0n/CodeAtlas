@@ -122,40 +122,64 @@ Public Class Form1
     Select Case value
       Case 1
         result = "One"
-        If True Then
-          Debug.Print("hello")
-        ElseIf False Then
-          Debug.Print("hello")
+        If value > 0 Then
+          If value Mod 2 = 0 Then
+            Debug.Print("Case 1: even")
+          Else
+            If value < 5 Then
+              Debug.Print("Case 1: small odd")
+            Else
+              Debug.Print("Case 1: large odd")
+            End If
+          End If
         Else
-          Debug.Print("hello")
+          Debug.Print("Case 1: non-positive")
         End If
+        Debug.Print("Case 1 complete")
       Case 2, 3
         result = "Two or Three"
-        If True Then
-          Debug.Print("hello")
-        ElseIf False Then
-          Debug.Print("hello")
+        If value = 2 Then
+          Debug.Print("Case 2: start")
+          If value Mod 2 = 0 Then
+            Debug.Print("Case 2: even")
+          Else
+            Debug.Print("Case 2: odd")
+          End If
         Else
-          Debug.Print("hello")
+          Debug.Print("Case 3")
         End If
+        Debug.Print("Case 2 or 3 complete")
       Case 4 To 6
         result = "Range"
       Case Is >= 10
         result = "High"
-        If True Then
-          Debug.Print("hello")
-        ElseIf False Then
-          Debug.Print("hello")
+        If value > 20 Then
+          If value Mod 2 = 0 Then
+            If value > 50 Then
+              If value > 100 Then
+                Debug.Print("High: over 100")
+              Else
+                Debug.Print("High: over 50")
+              End If
+            Else
+              Debug.Print("High: up to 50")
+            End If
+          Else
+            Debug.Print("High: odd")
+          End If
         Else
-          Debug.Print("hello")
+          Debug.Print("High: up to 20")
         End If
+        Debug.Print("High complete")
       Case Else
-        If True Then
-          Debug.Print("hello")
-        ElseIf False Then
-          Debug.Print("hello")
+        If value < 0 Then
+          If value < -10 Then
+            Debug.Print("Other: below -10")
+          Else
+            Debug.Print("Other: negative")
+          End If
         Else
-          Debug.Print("hello")
+          Debug.Print("Other: non-negative")
         End If
         result = "Other"
         Debug.Print("case not found")
