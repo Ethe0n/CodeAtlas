@@ -41,3 +41,4 @@ CodeAtlas - VB(Visual Basic) .net code analyzer
 - [x] 클래스 파일은 정상 분석되지만 모듈 파일은 존재하지 않음.
 - [ ] vbCrLf와 같은 특수 문자 UI 내에서는 변환 필요
 - [ ] 문자열 "&" 연산자가 "Concatenate"로 변환됨. 각 문자열 요소에 대해서 { }로 구분하고 &는 +로 변경 필요
+- [ ] Relations에 현재 노란색으로 표시되는 기본 함수들은 빼도 될 듯
