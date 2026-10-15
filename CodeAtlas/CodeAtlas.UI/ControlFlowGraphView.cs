@@ -554,14 +554,24 @@ public sealed class ControlFlowGraphView : UserControl
   private static void ExportSvg(Graph graph, string filePath)
   {
     var labels = GetGraphLabels(graph)
-        .Select(label => (Label: label, Text: label.Text))
         .ToArray();
 
     try
     {
-      foreach (var label in labels)
+      foreach (var (owner, label) in labels)
       {
-        label.Label.Text = EscapeSvgText(label.Text);
+        SetGraphLabel(owner, new Microsoft.Msagl.Drawing.Label(EscapeSvgText(label.Text))
+        {
+          Owner = owner,
+          FontName = label.FontName,
+          FontSize = label.FontSize,
+          FontStyle = label.FontStyle,
+          FontColor = label.FontColor,
+          Width = label.Width,
+          Height = label.Height,
+          GeometryLabel = label.GeometryLabel,
+          IsVisible = label.IsVisible
+        });
       }
 
       using var stream = File.Create(filePath);
@@ -570,25 +580,25 @@ public sealed class ControlFlowGraphView : UserControl
     }
     finally
     {
-      foreach (var label in labels)
+      foreach (var (owner, label) in labels)
       {
-        label.Label.Text = label.Text;
+        SetGraphLabel(owner, label);
       }
     }
   }
 
-  private static IEnumerable<Microsoft.Msagl.Drawing.Label> GetGraphLabels(Graph graph)
+  private static IEnumerable<(DrawingObject Owner, Microsoft.Msagl.Drawing.Label Label)> GetGraphLabels(Graph graph)
   {
     if (graph.Label is not null)
     {
-      yield return graph.Label;
+      yield return (graph, graph.Label);
     }
 
     foreach (var node in graph.Nodes)
     {
       if (node.Label is not null)
       {
-        yield return node.Label;
+        yield return (node, node.Label);
       }
     }
 
@@ -596,8 +606,24 @@ public sealed class ControlFlowGraphView : UserControl
     {
       if (edge.Label is not null)
       {
-        yield return edge.Label;
+        yield return (edge, edge.Label);
       }
+    }
+  }
+
+  private static void SetGraphLabel(DrawingObject owner, Microsoft.Msagl.Drawing.Label label)
+  {
+    switch (owner)
+    {
+      case Graph graph:
+        graph.Label = label;
+        break;
+      case Node node:
+        node.Label = label;
+        break;
+      case Edge edge:
+        edge.Label = label;
+        break;
     }
   }
 
@@ -1121,7 +1147,11 @@ public sealed class ControlFlowGraphView : UserControl
 
   private static void ConfigureNode(Node graphNode, ControlFlowPresentationNode node)
   {
-    graphNode.LabelText = FormatNodeLabel(node);
+    // Label.Text expands literal backslash-n; the constructor preserves code escapes.
+    graphNode.Label = new Microsoft.Msagl.Drawing.Label(FormatNodeLabel(node))
+    {
+      Owner = graphNode
+    };
     graphNode.Attr.Shape = node.Kind switch
     {
       "Entry" or "Exit" => Shape.Ellipse,

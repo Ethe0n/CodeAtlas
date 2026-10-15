@@ -12,6 +12,14 @@ Public Class Form1
     Dim test_string = ""
   End Sub
 
+  Public Sub StringTest()
+    Dim name As String = "string test"
+    Dim test_string As String = "name: " & name & vbCrLf & "\n"
+
+
+
+  End Sub
+
   Public Sub LongConditionTest()
     Dim test_string = "hello"
 
