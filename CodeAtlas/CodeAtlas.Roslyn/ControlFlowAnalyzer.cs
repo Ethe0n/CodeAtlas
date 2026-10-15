@@ -489,7 +489,7 @@ public sealed class ControlFlowAnalyzer
             IBinaryOperation binary => $"{FormatExpression(binary.LeftOperand, captureValues)} {GetBinaryOperator(binary.OperatorKind)} {FormatExpression(binary.RightOperand, captureValues)}",
             ILocalReferenceOperation local => local.Local.Name,
             IParameterReferenceOperation parameter => parameter.Parameter.Name,
-            IFieldReferenceOperation field => FormatMemberReference(
+            IFieldReferenceOperation field => FormatSpecialCharacterConstant(field) ?? FormatMemberReference(
                 field.Instance,
                 field.Field.Name,
                 field.Syntax,
@@ -513,6 +513,11 @@ public sealed class ControlFlowAnalyzer
         IReadOnlyDictionary<object, string>? captureValues)
     {
         var candidate = UnwrapConversion(operation);
+        if (FormatSpecialCharacterConstant(candidate) is { } specialCharacter)
+        {
+            return specialCharacter;
+        }
+
         if (candidate is ILiteralOperation or IInterpolatedStringOperation or
             IBinaryOperation { OperatorKind: BinaryOperatorKind.Concatenate })
         {
@@ -538,8 +543,13 @@ public sealed class ControlFlowAnalyzer
         var syntax = operation.Syntax;
         var changes = new List<TextChange>();
 
-        void CollectConcatenations(IOperation candidate)
+        void CollectDisplayExpressions(IOperation candidate)
         {
+            if (candidate is INameOfOperation)
+            {
+                return;
+            }
+
             if (candidate is IBinaryOperation { OperatorKind: BinaryOperatorKind.Concatenate } binary &&
                 syntax.Span.Contains(binary.Syntax.Span))
             {
@@ -549,14 +559,24 @@ public sealed class ControlFlowAnalyzer
                 return;
             }
 
+            if (!candidate.IsImplicit &&
+                syntax.Span.Contains(candidate.Syntax.Span) &&
+                FormatSpecialCharacterConstant(candidate) is { } specialCharacter)
+            {
+                changes.Add(new TextChange(
+                    new TextSpan(candidate.Syntax.SpanStart - syntax.SpanStart, candidate.Syntax.Span.Length),
+                    specialCharacter));
+                return;
+            }
+
             foreach (var child in candidate.ChildOperations)
             {
-                CollectConcatenations(child);
+                CollectDisplayExpressions(child);
             }
         }
 
-        // Replace semantic concatenations inside calls without changing receivers or argument names.
-        CollectConcatenations(operation);
+        // Format nested display expressions without changing receivers or argument names.
+        CollectDisplayExpressions(operation);
         return changes.Count == 0
             ? FormatSyntax(syntax)
             : SourceText.From(syntax.ToString())
@@ -646,6 +666,28 @@ public sealed class ControlFlowAnalyzer
             BinaryOperatorKind.Or or
             BinaryOperatorKind.ConditionalAnd or
             BinaryOperatorKind.ConditionalOr;
+    }
+
+    private static string? FormatSpecialCharacterConstant(IOperation operation)
+    {
+        if (operation is not IFieldReferenceOperation { Field.IsConst: true } field ||
+            field.Field.ContainingType.Name is not ("Constants" or "ControlChars") ||
+            field.Field.ContainingNamespace.ToDisplayString() != "Microsoft.VisualBasic")
+        {
+            return null;
+        }
+
+        return field.Field.ConstantValue switch
+        {
+            "\r\n" or "\n" or '\n' => "\"\\n\"",
+            "\r" or '\r' => "\"\\r\"",
+            "\t" or '\t' => "\"\\t\"",
+            "\b" or '\b' => "\"\\b\"",
+            "\f" or '\f' => "\"\\f\"",
+            "\v" or '\v' => "\"\\v\"",
+            "\0" or '\0' => "\"\\0\"",
+            _ => null
+        };
     }
 
     private static string FormatLiteral(ILiteralOperation literal)
