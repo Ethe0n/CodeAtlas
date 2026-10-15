@@ -479,8 +479,13 @@ public sealed class ControlFlowAnalyzer
         return operation switch
         {
             IConversionOperation conversion => FormatExpression(conversion.Operand, captureValues),
+            IParenthesizedOperation parenthesized => $"({FormatExpression(parenthesized.Operand, captureValues)})",
+            ICompoundAssignmentOperation { OperatorKind: BinaryOperatorKind.Concatenate } assignment =>
+                $"{FormatExpression(assignment.Target, captureValues)} += {FormatConcatenationOperand(assignment.Value, captureValues)}",
             ICompoundAssignmentOperation assignment => $"{FormatExpression(assignment.Target, captureValues)} {GetCompoundOperator(assignment.OperatorKind)}= {FormatExpression(assignment.Value, captureValues)}",
             ISimpleAssignmentOperation assignment => $"{FormatExpression(assignment.Target, captureValues)} = {FormatExpression(assignment.Value, captureValues)}",
+            IBinaryOperation { OperatorKind: BinaryOperatorKind.Concatenate } binary =>
+                $"{FormatConcatenationOperand(binary.LeftOperand, captureValues)} + {FormatConcatenationOperand(binary.RightOperand, captureValues)}",
             IBinaryOperation binary => $"{FormatExpression(binary.LeftOperand, captureValues)} {GetBinaryOperator(binary.OperatorKind)} {FormatExpression(binary.RightOperand, captureValues)}",
             ILocalReferenceOperation local => local.Local.Name,
             IParameterReferenceOperation parameter => parameter.Parameter.Name,
@@ -490,17 +495,73 @@ public sealed class ControlFlowAnalyzer
                 field.Syntax,
                 captureValues),
             IPropertyReferenceOperation property => property.Arguments.Length > 0
-                ? FormatSyntax(property.Syntax)
+                ? FormatOperationSyntax(property, captureValues)
                 : FormatMemberReference(
                     property.Instance,
                     property.Property.Name,
                     property.Syntax,
                     captureValues),
-            IInvocationOperation invocation => FormatSyntax(invocation.Syntax),
+            IInvocationOperation invocation => FormatOperationSyntax(invocation, captureValues),
             ILiteralOperation literal => FormatLiteral(literal),
             IFlowCaptureReferenceOperation capture => FormatFlowCaptureReference(capture, captureValues),
-            _ => FormatSyntax(operation.Syntax)
+            _ => FormatOperationSyntax(operation, captureValues)
         };
+    }
+
+    private static string FormatConcatenationOperand(
+        IOperation operation,
+        IReadOnlyDictionary<object, string>? captureValues)
+    {
+        var candidate = UnwrapConversion(operation);
+        if (candidate is ILiteralOperation or IInterpolatedStringOperation or
+            IBinaryOperation { OperatorKind: BinaryOperatorKind.Concatenate })
+        {
+            return FormatExpression(candidate, captureValues);
+        }
+
+        if (candidate is IParenthesizedOperation parenthesized &&
+            UnwrapConversion(parenthesized.Operand) is IBinaryOperation
+            {
+                OperatorKind: BinaryOperatorKind.Concatenate
+            })
+        {
+            return FormatExpression(parenthesized, captureValues);
+        }
+
+        return $"{{{FormatExpression(candidate, captureValues)}}}";
+    }
+
+    private static string FormatOperationSyntax(
+        IOperation operation,
+        IReadOnlyDictionary<object, string>? captureValues)
+    {
+        var syntax = operation.Syntax;
+        var changes = new List<TextChange>();
+
+        void CollectConcatenations(IOperation candidate)
+        {
+            if (candidate is IBinaryOperation { OperatorKind: BinaryOperatorKind.Concatenate } binary &&
+                syntax.Span.Contains(binary.Syntax.Span))
+            {
+                changes.Add(new TextChange(
+                    new TextSpan(binary.Syntax.SpanStart - syntax.SpanStart, binary.Syntax.Span.Length),
+                    FormatExpression(binary, captureValues)));
+                return;
+            }
+
+            foreach (var child in candidate.ChildOperations)
+            {
+                CollectConcatenations(child);
+            }
+        }
+
+        // Replace semantic concatenations inside calls without changing receivers or argument names.
+        CollectConcatenations(operation);
+        return changes.Count == 0
+            ? FormatSyntax(syntax)
+            : SourceText.From(syntax.ToString())
+                .WithChanges(changes.DistinctBy(change => change.Span).OrderBy(change => change.Span.Start))
+                .ToString();
     }
 
     private static string FormatConditionExpression(
@@ -589,6 +650,15 @@ public sealed class ControlFlowAnalyzer
 
     private static string FormatLiteral(ILiteralOperation literal)
     {
+        if (literal.Type?.SpecialType == SpecialType.System_String &&
+            literal.ConstantValue.HasValue &&
+            literal.ConstantValue.Value is string text)
+        {
+            return literal.IsImplicit
+                ? $"\"{text.Replace("\"", "\"\"", StringComparison.Ordinal)}\""
+                : literal.Syntax.ToString();
+        }
+
         if (!literal.IsImplicit)
         {
             return FormatSyntax(literal.Syntax);
@@ -665,6 +735,7 @@ public sealed class ControlFlowAnalyzer
         return operatorKind switch
         {
             BinaryOperatorKind.Add => "+",
+            BinaryOperatorKind.Concatenate => "+",
             BinaryOperatorKind.Subtract => "-",
             BinaryOperatorKind.Multiply => "*",
             BinaryOperatorKind.Divide => "/",
