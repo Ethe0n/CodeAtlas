@@ -11,9 +11,18 @@ internal sealed class ControlFlowPresentationBuilder
     var nodes = new List<ControlFlowPresentationNode>();
     var chains = new Dictionary<int, IReadOnlyList<ControlFlowPresentationNode>>();
     var rawNodesById = controlFlow.Nodes.ToDictionary(node => node.Id);
+    var usingCleanupBlocks = controlFlow.Regions
+        .Where(region => region.Kind == "Finally" && region.SourceKind == ControlFlowRegionSourceKind.Using)
+        .SelectMany(region => Enumerable.Range(region.FirstBlockId, region.LastBlockId - region.FirstBlockId + 1))
+        .ToHashSet();
 
     foreach (var rawNode in controlFlow.Nodes)
     {
+      if (usingCleanupBlocks.Contains(rawNode.Id))
+      {
+        continue;
+      }
+
       var chain = CreateNodeChain(rawNode);
       chains.Add(rawNode.Id, chain);
       nodes.AddRange(chain);
@@ -65,10 +74,75 @@ internal sealed class ControlFlowPresentationBuilder
 
     ApplyStructuredTransfers(controlFlow, edges, chains);
     SimplifySelectCases(controlFlow, nodes, edges, chains, rawNodesById);
+    MarkUsingBoundaries(controlFlow.Regions, nodes, edges);
     CollapsePassThroughNodes(nodes, edges);
     ApplyExceptionRegionMetadata(controlFlow.Regions, nodes);
     ApplyExceptionRegionEdgeLabels(nodes, edges);
+    ApplyUsingEdgeLabels(edges);
     return new ControlFlowPresentation(controlFlow.MethodName, nodes, edges);
+  }
+
+  private static void MarkUsingBoundaries(
+      IReadOnlyList<ControlFlowRegionInfo> regions,
+      IReadOnlyList<ControlFlowPresentationNode> nodes,
+      List<ControlFlowPresentationEdge> edges)
+  {
+    var usingScopes = regions
+        .Where(region => region.Kind == "TryAndFinally" && region.SourceKind == ControlFlowRegionSourceKind.Using)
+        .ToArray();
+    var nodesById = nodes.ToDictionary(node => node.Id, StringComparer.Ordinal);
+    for (var index = 0; index < edges.Count; index++)
+    {
+      var edge = edges[index];
+      var source = nodesById[edge.From];
+      var target = nodesById[edge.To];
+      var leavesUsing = usingScopes.Any(region =>
+          source.SourceBlockId >= region.FirstBlockId && source.SourceBlockId <= region.LastBlockId &&
+          (target.SourceBlockId < region.FirstBlockId || target.SourceBlockId > region.LastBlockId));
+      var entersUsing = target.Kind == "UsingResource";
+      if (!leavesUsing && !entersUsing)
+      {
+        continue;
+      }
+
+      edges[index] = edge with { EntersUsing = entersUsing, LeavesUsing = leavesUsing };
+    }
+  }
+
+  private static void ApplyUsingEdgeLabels(List<ControlFlowPresentationEdge> edges)
+  {
+    for (var index = 0; index < edges.Count; index++)
+    {
+      var edge = edges[index];
+      if (!edge.EntersUsing && !edge.LeavesUsing)
+      {
+        continue;
+      }
+
+      var labels = new List<string>();
+      var existingLabel = edge.DisplayLabel ?? edge.Kind switch
+      {
+        "ConditionalTrue" => "True",
+        "ConditionalFalse" => "False",
+        _ => null
+      };
+      if (!string.IsNullOrWhiteSpace(existingLabel))
+      {
+        labels.Add(existingLabel);
+      }
+
+      if (edge.LeavesUsing)
+      {
+        labels.Add("End Using");
+      }
+
+      if (edge.EntersUsing)
+      {
+        labels.Add("Using");
+      }
+
+      edges[index] = edge with { DisplayLabel = string.Join(" / ", labels) };
+    }
   }
 
   private static void ApplyExceptionRegionMetadata(
@@ -174,6 +248,7 @@ internal sealed class ControlFlowPresentationBuilder
       var edge = edges[index];
       if (!nodesById.TryGetValue(edge.To, out var target) ||
           !target.IsExceptionRegionEntry ||
+          target.ExceptionRegionKind == "Using" ||
           edge.Kind is "ConditionalTrue" or "ConditionalFalse" or "Conditional")
       {
         continue;
@@ -181,12 +256,6 @@ internal sealed class ControlFlowPresentationBuilder
 
       nodesById.TryGetValue(edge.From, out var source);
       if (source?.ExceptionRegionId == target.ExceptionRegionId)
-      {
-        continue;
-      }
-
-      if (target.ExceptionRegionKind == "Using" &&
-          source?.ExceptionGroupId == target.ExceptionGroupId)
       {
         continue;
       }
@@ -516,35 +585,65 @@ internal sealed class ControlFlowPresentationBuilder
     }
 
     var legacyTexts = SplitOperationTexts(rawNode.Text);
-    var operationTexts = rawNode.Operations.Count > 0
+    var displayOperations = rawNode.Operations.Count > 0
         ? rawNode.Operations
             .Where(operation => operation.Role is not (
                 ControlFlowOperationRole.ForEachIterationAssignment or
                 ControlFlowOperationRole.ErrorHandlingDirective))
-            .Select(operation => operation.Text)
+            .Select(operation => (
+                Text: operation.UsingResourceText ?? operation.Text,
+                IsUsingResource: operation.UsingResourceText is not null))
+            .Where(operation => !string.IsNullOrWhiteSpace(operation.Text))
             .ToArray()
         : rawNode.OperationTexts.Count > 0
-            ? rawNode.OperationTexts
-        : legacyTexts.Where(operation => !IsConditionOperation(operation)).ToArray();
+            ? rawNode.OperationTexts.Select(text => (Text: text, IsUsingResource: false)).ToArray()
+        : legacyTexts.Where(operation => !IsConditionOperation(operation))
+            .Select(text => (Text: text, IsUsingResource: false)).ToArray();
     var conditionText = rawNode.ControlStructure?.Kind == ControlFlowStructureKind.ForEach
         ? rawNode.ControlStructure.Text
         : rawNode.Condition ?? legacyTexts
             .LastOrDefault(IsConditionOperation)?["Condition: ".Length..];
-    var returnText = rawNode.ReturnText ?? operationTexts.LastOrDefault(IsReturnOperation);
-    var bodyOperations = operationTexts
-        .Where(operation => !IsReturnOperation(operation))
+    var returnText = rawNode.ReturnText ?? displayOperations.Select(operation => operation.Text).LastOrDefault(IsReturnOperation);
+    var bodyOperations = displayOperations
+        .Where(operation => !IsReturnOperation(operation.Text))
         .ToArray();
     var nodes = new List<ControlFlowPresentationNode>();
     var segmentIndex = 0;
 
-    foreach (var operationChunk in bodyOperations.Chunk(MaxOperationsPerNode))
+    var pendingOperations = new List<string>();
+    void FlushOperations()
     {
+      if (pendingOperations.Count == 0)
+      {
+        return;
+      }
+
       nodes.Add(CreateNode(
           rawNode,
           segmentIndex++,
           "Block",
-          string.Join(Environment.NewLine, operationChunk)));
+          string.Join(Environment.NewLine, pendingOperations)));
+      pendingOperations.Clear();
     }
+
+    foreach (var operation in bodyOperations)
+    {
+      if (operation.IsUsingResource)
+      {
+        FlushOperations();
+        nodes.Add(CreateNode(rawNode, segmentIndex++, "UsingResource", operation.Text));
+      }
+      else
+      {
+        pendingOperations.Add(operation.Text);
+        if (pendingOperations.Count == MaxOperationsPerNode)
+        {
+          FlushOperations();
+        }
+      }
+    }
+
+    FlushOperations();
 
     if (conditionText is not null)
     {
@@ -706,7 +805,11 @@ internal sealed class ControlFlowPresentationBuilder
         semanticEdge.Kind,
         semanticEdge.Condition,
         incomingEdge.DisplayLabel ?? outgoingEdge.DisplayLabel,
-        incomingEdge.IsBackEdge || outgoingEdge.IsBackEdge);
+        incomingEdge.IsBackEdge || outgoingEdge.IsBackEdge)
+    {
+      EntersUsing = incomingEdge.EntersUsing || outgoingEdge.EntersUsing,
+      LeavesUsing = incomingEdge.LeavesUsing || outgoingEdge.LeavesUsing
+    };
   }
 }
 
@@ -743,4 +846,9 @@ internal sealed record ControlFlowPresentationEdge(
     string Kind,
     string? Condition,
     string? DisplayLabel,
-    bool IsBackEdge);
+    bool IsBackEdge)
+{
+  public bool EntersUsing { get; init; }
+
+  public bool LeavesUsing { get; init; }
+}

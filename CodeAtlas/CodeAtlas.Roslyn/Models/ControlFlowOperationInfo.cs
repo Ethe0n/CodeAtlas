@@ -5,7 +5,10 @@ public sealed record ControlFlowOperationInfo(
     string Text,
     bool IsImplicit,
     ControlFlowOperationRole Role,
-    TextSpanInfo? SourceLocation);
+    TextSpanInfo? SourceLocation)
+{
+    public string? UsingResourceText { get; init; }
+}
 
 public enum ControlFlowOperationRole
 {

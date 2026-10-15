@@ -1168,7 +1168,7 @@ public sealed class ControlFlowGraphView : UserControl
       _ when node.ExceptionRegionKind == "Try" => new Microsoft.Msagl.Drawing.Color(70, 112, 170),
       _ when node.ExceptionRegionKind == "Catch" => new Microsoft.Msagl.Drawing.Color(176, 76, 76),
       _ when node.ExceptionRegionKind == "Finally" => new Microsoft.Msagl.Drawing.Color(112, 88, 150),
-      _ when node.ExceptionRegionKind == "Using" => new Microsoft.Msagl.Drawing.Color(35, 125, 125),
+      _ when node.Kind == "UsingResource" || node.ExceptionRegionKind == "Using" => new Microsoft.Msagl.Drawing.Color(35, 125, 125),
       _ => Microsoft.Msagl.Drawing.Color.SlateGray
     };
     graphNode.Attr.FillColor = node.Kind switch
@@ -1179,7 +1179,7 @@ public sealed class ControlFlowGraphView : UserControl
       _ when node.ExceptionRegionKind == "Try" => new Microsoft.Msagl.Drawing.Color(242, 247, 253),
       _ when node.ExceptionRegionKind == "Catch" => new Microsoft.Msagl.Drawing.Color(253, 244, 244),
       _ when node.ExceptionRegionKind == "Finally" => new Microsoft.Msagl.Drawing.Color(247, 244, 251),
-      _ when node.ExceptionRegionKind == "Using" => new Microsoft.Msagl.Drawing.Color(239, 249, 248),
+      _ when node.Kind == "UsingResource" || node.ExceptionRegionKind == "Using" => new Microsoft.Msagl.Drawing.Color(239, 249, 248),
       _ => Microsoft.Msagl.Drawing.Color.White
     };
   }

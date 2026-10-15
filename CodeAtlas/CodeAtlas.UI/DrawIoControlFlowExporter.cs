@@ -1,6 +1,7 @@
 using Microsoft.Msagl.Core.Geometry.Curves;
 using Microsoft.Msagl.Drawing;
 using System.Globalization;
+using System.Text;
 using System.Xml.Linq;
 using MsaglPoint = Microsoft.Msagl.Core.Geometry.Point;
 using MsaglRectangle = Microsoft.Msagl.Core.Geometry.Rectangle;
@@ -87,7 +88,12 @@ internal static class DrawIoControlFlowExporter
                 new XAttribute("name", diagramName),
                 model)));
 
-    document.Save(filePath);
+    // Desktop format detection can reject a BOM before the XML header.
+    using var writer = new StreamWriter(
+        filePath,
+        append: false,
+        encoding: new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+    document.Save(writer);
   }
 
   private static XElement CreateNodeCell(

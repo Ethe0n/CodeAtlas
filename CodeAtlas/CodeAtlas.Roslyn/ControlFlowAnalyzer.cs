@@ -49,10 +49,11 @@ public sealed class ControlFlowAnalyzer
         var regionIds = rawRegions
             .Select((region, index) => (Region: region, Id: $"region_{index}"))
             .ToDictionary(item => item.Region, item => item.Id);
-        var usingRegionRoots = GetUsingRegionRoots(methodBlock, rawRegions, graph.Blocks);
+        var usingRegionRoots = GetUsingRegionRoots(rawRegions, graph.Blocks);
         var regionSourceKinds = rawRegions.ToDictionary(
             region => region,
-            region => usingRegionRoots.Any(root => IsRegionWithin(region, root))
+            region => usingRegionRoots.Contains(region) ||
+                region.EnclosingRegion is { } parent && usingRegionRoots.Contains(parent)
                 ? ControlFlowRegionSourceKind.Using
                 : ControlFlowRegionSourceKind.None);
 
@@ -94,6 +95,7 @@ public sealed class ControlFlowAnalyzer
             .ToArray();
         var operationTexts = operations
             .Select(operation => operation.Text)
+            .Where(text => !string.IsNullOrWhiteSpace(text))
             .ToArray();
         var textLines = operationTexts
             .ToList();
@@ -134,17 +136,46 @@ public sealed class ControlFlowAnalyzer
         IReadOnlyDictionary<object, string> captureValues)
     {
         var text = FormatOperation(operation, captureValues);
-        if (string.IsNullOrWhiteSpace(text))
+        var usingResourceText = GetUsingResourceText(operation);
+        if (string.IsNullOrWhiteSpace(text) && usingResourceText is null)
         {
             return null;
         }
 
         return new ControlFlowOperationInfo(
             operation.Kind.ToString(),
-            text,
+            text ?? string.Empty,
             operation.IsImplicit,
             GetOperationRole(operation),
-            ToSpanInfo(operation.Syntax.GetLocation().GetLineSpan()));
+            ToSpanInfo(operation.Syntax.GetLocation().GetLineSpan()))
+        {
+            UsingResourceText = usingResourceText
+        };
+    }
+
+    private static string? GetUsingResourceText(IOperation operation)
+    {
+        if (!operation.IsImplicit)
+        {
+            return null;
+        }
+
+        var usingStatement = operation.Syntax.AncestorsAndSelf()
+            .OfType<UsingStatementSyntax>()
+            .FirstOrDefault();
+        if (usingStatement is null)
+        {
+            return null;
+        }
+
+        return operation switch
+        {
+            ISimpleAssignmentOperation when operation.Syntax is VariableDeclaratorSyntax =>
+                operation.Syntax.ToString(),
+            IFlowCaptureOperation when usingStatement.Expression?.Span == operation.Syntax.Span =>
+                operation.Syntax.ToString(),
+            _ => null
+        };
     }
 
     private static ControlFlowOperationRole GetOperationRole(IOperation operation)
@@ -303,68 +334,27 @@ public sealed class ControlFlowAnalyzer
     }
 
     private static IReadOnlySet<ControlFlowRegion> GetUsingRegionRoots(
-        MethodBlockSyntax methodBlock,
         IReadOnlyList<ControlFlowRegion> regions,
         IReadOnlyList<BasicBlock> blocks)
     {
         var roots = new HashSet<ControlFlowRegion>();
-        foreach (var usingBlock in methodBlock.DescendantNodes().OfType<UsingBlockSyntax>())
+        foreach (var region in regions.Where(region =>
+            region.Kind == ControlFlowRegionKind.Finally &&
+            region.EnclosingRegion?.Kind == ControlFlowRegionKind.TryAndFinally))
         {
-            var root = regions
-                .Where(region =>
-                    region.Kind == ControlFlowRegionKind.TryAndFinally &&
-                    RegionContainsUsingSyntax(region, blocks, usingBlock))
-                .OrderBy(region => region.LastBlockOrdinal - region.FirstBlockOrdinal)
-                .FirstOrDefault();
-            if (root is not null)
+            // Using cleanup is an implicit invocation whose source is the resource header.
+            // Do not classify an explicit Try/Finally inside a Using body as generated cleanup.
+            if (Enumerable.Range(region.FirstBlockOrdinal, region.LastBlockOrdinal - region.FirstBlockOrdinal + 1)
+                .SelectMany(ordinal => blocks[ordinal].Operations)
+                .OfType<IInvocationOperation>()
+                .Any(operation => operation.IsImplicit &&
+                    operation.Syntax.AncestorsAndSelf().OfType<UsingStatementSyntax>().Any()))
             {
-                roots.Add(root);
+                roots.Add(region.EnclosingRegion!);
             }
         }
 
         return roots;
-    }
-
-    private static bool RegionContainsUsingSyntax(
-        ControlFlowRegion region,
-        IReadOnlyList<BasicBlock> blocks,
-        UsingBlockSyntax usingBlock)
-    {
-        for (var ordinal = region.FirstBlockOrdinal;
-             ordinal <= region.LastBlockOrdinal;
-             ordinal++)
-        {
-            var block = blocks[ordinal];
-            if (block.Operations.Any(operation => IsInsideUsing(operation.Syntax, usingBlock)) ||
-                block.BranchValue is not null && IsInsideUsing(block.BranchValue.Syntax, usingBlock))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool IsInsideUsing(SyntaxNode syntax, UsingBlockSyntax usingBlock)
-    {
-        return syntax.AncestorsAndSelf()
-            .OfType<UsingBlockSyntax>()
-            .Any(candidate => candidate.Span == usingBlock.Span);
-    }
-
-    private static bool IsRegionWithin(
-        ControlFlowRegion region,
-        ControlFlowRegion ancestor)
-    {
-        for (var current = region; current is not null; current = current.EnclosingRegion)
-        {
-            if (ReferenceEquals(current, ancestor))
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private static IEnumerable<ControlFlowTransferInfo> ToTransfers(
