@@ -76,7 +76,9 @@ public sealed class CallGraphView : UserControl
           currentNode);
     }
 
-    foreach (var group in outgoingCalls.GroupBy(GetCalleeNodeId))
+    foreach (var group in outgoingCalls
+        .Where(call => call.IsProjectInternal)
+        .GroupBy(GetCalleeNodeId))
     {
       var call = group.First();
       var callCount = group.Count();
