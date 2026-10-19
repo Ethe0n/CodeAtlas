@@ -12,7 +12,7 @@ public sealed class MainForm : Form
   private readonly TabPage _overviewTab = new("Overview");
   private readonly TabPage _relationsTab = new("Relations");
   private readonly TabPage _flowTab = new("Flow");
-  private readonly TabPage _diagnosticsTab = new("진단");
+  private readonly TabPage _diagnosticsTab = new("Diagnostics");
   private readonly DiagnosticsView _diagnosticsView = new();
   private readonly Panel _relationsHost = new() { Dock = DockStyle.Fill };
   private readonly Panel _flowHost = new() { Dock = DockStyle.Fill };
@@ -700,7 +700,7 @@ public sealed class MainForm : Form
     if (project is null) return;
     if (_projectDiagnostics.TryGetValue(project.Id, out var cached))
     {
-      if (changed) _diagnosticsView.ShowResult(project.Name, cached);
+      if (changed) _diagnosticsView.ShowResult(project, cached);
       return;
     }
 
@@ -720,7 +720,7 @@ public sealed class MainForm : Form
           !ReferenceEquals(_diagnosticsCancellation, cancellation) || _diagnosticsProjectId != project.Id)
         return;
       _projectDiagnostics[project.Id] = result;
-      _diagnosticsView.ShowResult(project.Name, result);
+      _diagnosticsView.ShowResult(project, result);
     }
     catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
     catch (Exception exception)

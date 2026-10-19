@@ -255,9 +255,9 @@ internal static class Program
     var tabs = (TabControl)formType.GetField("_detailsTabs", flags)!.GetValue(form)!;
     _ = tabs.Handle;
     Assert(tabs.TabPages.Cast<TabPage>().Select(tab => tab.Text).SequenceEqual(
-        new[] { "Overview", "Relations", "Flow", "진단" }), "Korean Diagnostics tab does not replace graph tabs");
+        new[] { "Overview", "Relations", "Flow", "Diagnostics" }), "Diagnostics tab retains its original name");
     var diagnostics = (DiagnosticsView)formType.GetField("_diagnosticsView", flags)!.GetValue(form)!;
-    diagnostics.ShowResult(owner.Name, result);
+    diagnostics.ShowResult(owner, result);
     var grid = (DataGridView)typeof(DiagnosticsView).GetField("_grid", flags)!.GetValue(diagnostics)!;
     Assert(grid.VirtualMode && grid.RowCount == result.Diagnostics.Count, "Diagnostic rows use the existing virtual grid");
     var severity = (ComboBox)typeof(DiagnosticsView).GetField("_severity", flags)!.GetValue(diagnostics)!;
@@ -269,7 +269,7 @@ internal static class Program
         category.GetItemText(LintCategory.Interop) == "COM 상호 운용" &&
         category.GetItemText(LintCategory.Maintainability) == "유지보수성", "Diagnostic filter labels are Korean; items remain enums");
     Assert(grid.Columns.Cast<DataGridViewColumn>().Select(column => column.HeaderText).SequenceEqual(
-        new[] { "수준", "규칙", "분류", "진단 내용", "프로젝트", "파일", "줄" }), "Diagnostic grid headers are Korean");
+        new[] { "수준", "규칙", "분류", "진단 내용", "대상", "프로젝트", "파일" }), "Diagnostic grid shows targets instead of line numbers");
     severity.SelectedItem = LintSeverity.Warning;
     Assert(grid.RowCount == result.Diagnostics.Count(item => item.Severity == LintSeverity.Warning), "Diagnostics severity filter uses model values");
     Assert(grid.RowCount > 0 && (string?)grid.Rows[0].Cells[0].Value == "경고", "Diagnostic grid displays Korean severity");
@@ -284,9 +284,16 @@ internal static class Program
       var details = (TextBox)typeof(DiagnosticsView).GetField("_details", flags)!.GetValue(diagnostics)!;
       Assert(details.Text.Contains("권장 조치", StringComparison.Ordinal) &&
           details.Text.Contains("판단: 직접 검토 필요", StringComparison.Ordinal) &&
+          details.Text.Contains("대상: 함수:", StringComparison.Ordinal) &&
           details.Text.Contains("심볼 ID: M:", StringComparison.Ordinal),
           "Selected diagnostic displays Korean explanations while preserving symbol identity");
     }
+
+    var methodTarget = grid.Rows.Cast<DataGridViewRow>().First(row => (string?)row.Cells[1].Value == "CAL1001");
+    Assert((string?)methodTarget.Cells[4].Value == "함수: TestLegacyErrorFlow()",
+        "Existing sample diagnostic identifies its method by model SymbolId");
+    CheckDiagnosticTargetLabels(diagnostics, grid, owner, result.Diagnostics[0]);
+    diagnostics.ShowResult(owner, result);
 
     var copy = owner with { Id = "duplicate-project-id", Name = owner.Name };
     var clean = owner with { Id = "clean-project-id", Name = "Clean", Types = [], Calls = [], ControlFlows = [] };
@@ -340,7 +347,7 @@ internal static class Program
     Assert(tabs.SelectedTab?.Text == "Overview", "Diagnostic activation returns to the existing Overview");
     tabs.SelectedIndex = 3;
     tree.SelectedNode = tree.Nodes[0];
-    Assert(tabs.SelectedTab?.Text == "진단", "Ordinary TreeView selections preserve the Diagnostics tab");
+    Assert(tabs.SelectedTab?.Text == "Diagnostics", "Ordinary TreeView selections preserve the Diagnostics tab");
     formType.GetMethod("ResetProjectDiagnostics", flags)!.Invoke(form, null);
     Assert(cache.Count == 0 && grid.RowCount == 0, "Solution replacement clears all old project diagnostics");
     formType.GetField("_solution", flags)!.SetValue(form, solution);
@@ -357,6 +364,52 @@ internal static class Program
     form.DrawToBitmap(bitmap, new System.Drawing.Rectangle(System.Drawing.Point.Empty, form.Size));
     bitmap.Save(Path.Combine(root, "artifacts", "lint-diagnostics.png"));
     form.Hide();
+  }
+
+  private static void CheckDiagnosticTargetLabels(DiagnosticsView diagnostics, DataGridView grid,
+      ProjectStructure project, LintDiagnostic template)
+  {
+    var span = new TextSpanInfo(1, 1, 1, 20);
+    var first = new MethodStructure("Run", "M:Example.Outer.Nested.Run(System.Int32)",
+        "T:Example.Outer.Nested", VbMethodKind.Sub, "Public", "Nested.vb", false, span);
+    var second = first with { SymbolId = "M:Example.Outer.Nested.Run(System.String)" };
+    var field = new FieldStructure("F:Example.Outer.Nested.value", "value", "System.Int32", "Public",
+        true, false, false, first.ContainingTypeSymbolId, "Nested.vb", false, span, "0");
+    var otherField = field with { SymbolId = "F:Example.Other.value", DeclaringTypeSymbolId = "T:Example.Other" };
+    var type = project.Types[0] with
+    {
+      Name = "Nested", FullName = "Example.Outer.Nested", SymbolId = first.ContainingTypeSymbolId,
+      Methods = [first, second], Fields = [field]
+    };
+    var fixture = project with { Types = [type, type with
+    {
+      Name = "Other", FullName = "Example.Other", SymbolId = "T:Example.Other", Methods = [], Fields = [otherField]
+    }] };
+    var findings = new[] { first.SymbolId, second.SymbolId, field.SymbolId, otherField.SymbolId, null }
+        .Select(id => template with { SymbolId = id }).ToArray();
+    diagnostics.ShowResult(fixture, new LintResult(findings, 1, 0));
+    Assert((string?)grid.Rows[0].Cells[4].Value == "함수: Run(System.Int32)" &&
+        (string?)grid.Rows[1].Cells[4].Value == "함수: Run(System.String)",
+        "Method targets show readable names with distinct overload signatures");
+    Assert((string?)grid.Rows[2].Cells[4].Value == "변수: value" &&
+        (string?)grid.Rows[3].Cells[4].Value == "변수: value", "Field target labels show variable names first");
+    Assert((string?)grid.Rows[4].Cells[4].Value == "프로젝트 전체", "Coverage diagnostics identify the project-wide scope");
+    grid.CurrentCell = grid.Rows[2].Cells[0];
+    var details = (TextBox)typeof(DiagnosticsView).GetField("_details", BindingFlags.Instance | BindingFlags.NonPublic)!
+        .GetValue(diagnostics)!;
+    Assert(details.Text.Contains("대상: 변수: Example.Outer.Nested.value", StringComparison.Ordinal) &&
+        details.Text.Contains("위치:", StringComparison.Ordinal), "Field diagnostic details retain both target and source location");
+    grid.CurrentCell = grid.Rows[3].Cells[0];
+    Assert(details.Text.Contains("대상: 변수: Example.Other.value", StringComparison.Ordinal),
+        "Same-named fields resolve to their own declaring types by SymbolId");
+    grid.CurrentCell = grid.Rows[0].Cells[0];
+    Assert(details.Text.Contains("대상: 함수: Example.Outer.Nested.Run(System.Int32)", StringComparison.Ordinal),
+        "Method details preserve the nested owner and full signature");
+    diagnostics.ShowResult(fixture, new LintResult([findings[0] with { ProjectId = "another-project" }], 1, 0));
+    Assert(((string)grid.Rows[0].Cells[4].Value!).StartsWith("대상 확인 불가", StringComparison.Ordinal),
+        "Target names are not resolved from a different project's same SymbolId");
+    diagnostics.ClearResult();
+    Assert(grid.RowCount == 0, "Clearing diagnostics removes target rows");
   }
 
   private static void CheckTopology(Graph graph, ControlFlowPresentation presentation)

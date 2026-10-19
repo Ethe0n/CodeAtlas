@@ -1,4 +1,5 @@
 using CodeAtlas.Lint;
+using CodeAtlas.Roslyn.Models;
 
 namespace CodeAtlas.UI;
 
@@ -20,6 +21,7 @@ internal sealed class DiagnosticsView : UserControl
   };
   private LintResult? _result;
   private string _projectName = "";
+  private readonly Dictionary<(string ProjectId, string SymbolId), (string Label, string QualifiedLabel)> _targets = new();
 
   public DiagnosticsView()
   {
@@ -52,12 +54,17 @@ internal sealed class DiagnosticsView : UserControl
     _grid.AddColumn("규칙", item => item.RuleId, 75, 75);
     _grid.AddColumn("분류", item => FormatCategory(item.Category), 100, 100);
     _grid.AddColumn("진단 내용", item => item.Title, 230, 160);
+    _grid.AddColumn("대상", item => FormatTarget(item), 230, 210);
     _grid.AddColumn("프로젝트", item => item.ProjectName, 105, 95);
     _grid.AddColumn("파일", item => item.FilePath ?? "", 135, 100);
-    _grid.AddColumn("줄", item => item.SourceLocation?.StartLine, 50, 50);
     _grid.SelectionChanged += (_, _) => ShowSelectedDetails();
     _grid.CurrentCellChanged += (_, _) => ShowSelectedDetails();
     _grid.ItemActivated += item => DiagnosticActivated?.Invoke(item);
+    _grid.CellToolTipTextNeeded += (_, args) =>
+    {
+      if (args.ColumnIndex == 4 && _grid.GetItem(args.RowIndex) is { } item)
+        args.ToolTipText = FormatTarget(item, qualified: true);
+    };
 
     var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4 };
     layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -76,9 +83,23 @@ internal sealed class DiagnosticsView : UserControl
 
   public event Action<LintDiagnostic>? DiagnosticActivated;
 
-  public void ShowResult(string projectName, LintResult result)
+  public void ShowResult(ProjectStructure project, LintResult result)
   {
-    _projectName = projectName;
+    _targets.Clear();
+    foreach (var type in project.Types)
+    {
+      _targets[(project.Id, type.SymbolId)] = ($"타입: {type.Name}", $"타입: {type.FullName}");
+      foreach (var method in type.Methods)
+      {
+        var signatureStart = method.SymbolId.IndexOf('(', StringComparison.Ordinal);
+        var signature = signatureStart >= 0 ? method.SymbolId[signatureStart..] : "()";
+        _targets[(project.Id, method.SymbolId)] =
+            ($"함수: {method.Name}{signature}", $"함수: {type.FullName}.{method.Name}{signature}");
+      }
+      foreach (var field in type.Fields)
+        _targets[(project.Id, field.SymbolId)] = ($"변수: {field.Name}", $"변수: {type.FullName}.{field.Name}");
+    }
+    _projectName = project.Name;
     _result = result;
     RefreshItems();
   }
@@ -87,6 +108,7 @@ internal sealed class DiagnosticsView : UserControl
   {
     _result = null;
     _projectName = "";
+    _targets.Clear();
     _grid.SetItems(Array.Empty<LintDiagnostic>());
     _grid.CurrentCell = null;
     _details.Clear();
@@ -114,6 +136,7 @@ internal sealed class DiagnosticsView : UserControl
     [
       $"{item.RuleId} | {FormatSeverity(item.Severity)} | {FormatCategory(item.Category)}",
       item.Title,
+      $"대상: {FormatTarget(item, qualified: true)}",
       $"판단: {(item.Assessment == LintAssessment.ManualReview ? "직접 검토 필요" : "해당 패턴 발견")}",
       "", item.Message, "", "권장 조치", item.Recommendation,
       "", $"프로젝트: {item.ProjectName}", $"심볼 ID: {item.SymbolId ?? "(프로젝트 전체)"}",
@@ -121,6 +144,12 @@ internal sealed class DiagnosticsView : UserControl
       $"참고 자료: {item.HelpLink ?? "CodeAtlas v1 진단 규칙"}"
     ]);
   }
+
+  private string FormatTarget(LintDiagnostic item, bool qualified = false) => item.SymbolId is null
+      ? "프로젝트 전체"
+      : _targets.TryGetValue((item.ProjectId, item.SymbolId), out var target)
+          ? qualified ? target.QualifiedLabel : target.Label
+          : $"대상 확인 불가 ({item.SymbolId})";
 
   private static string FormatSeverity(LintSeverity severity) => severity switch
   {
