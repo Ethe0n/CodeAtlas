@@ -58,17 +58,23 @@ public sealed class MainForm : Form
 
     BuildLayout();
     _openSolutionMenuItem.Click += async (_, _) => await OpenSolutionAsync();
-    _exportFlowImageMenuItem.Click += (_, _) =>
+    _exportFlowImageMenuItem.Click += async (_, _) =>
     {
+      var selectedNode = _projectExplorer.SelectedNode;
       _detailsTabs.SelectedTab = _flowTab;
       EnsureSelectedGraphLoaded();
-      _controlFlowGraphView.ExportImage(this);
+      await _controlFlowGraphView.WaitForLayoutAsync();
+      if (!IsDisposed && ReferenceEquals(_projectExplorer.SelectedNode, selectedNode))
+        _controlFlowGraphView.ExportImage(this);
     };
-    _exportFlowDiagramMenuItem.Click += (_, _) =>
+    _exportFlowDiagramMenuItem.Click += async (_, _) =>
     {
+      var selectedNode = _projectExplorer.SelectedNode;
       _detailsTabs.SelectedTab = _flowTab;
       EnsureSelectedGraphLoaded();
-      _controlFlowGraphView.ExportDrawIo(this);
+      await _controlFlowGraphView.WaitForLayoutAsync();
+      if (!IsDisposed && ReferenceEquals(_projectExplorer.SelectedNode, selectedNode))
+        _controlFlowGraphView.ExportDrawIo(this);
     };
     _cancelAnalysisButton.Click += (_, _) => CancelAnalysis();
     _callGraphView.MethodSelected += SelectMethodNodeBySymbolId;
@@ -216,6 +222,20 @@ public sealed class MainForm : Form
       return;
     }
 
+    if (MessageBox.Show(
+        this,
+        "Opening a solution uses MSBuild and can execute code from its projects, referenced projects, " +
+        "imported targets, and packages with your Windows permissions.\n\n" +
+        "Only continue if you trust the solution and all of these files. This is not a sandbox.\n\n" +
+        $"Trust and open this solution?\n{dialog.FileName}",
+        "Trust solution",
+        MessageBoxButtons.YesNo,
+        MessageBoxIcon.Warning,
+        MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+    {
+      return;
+    }
+
     using var cancellation = new CancellationTokenSource();
     _analysisCancellation = cancellation;
     BeginAnalysisUi();
@@ -225,7 +245,7 @@ public sealed class MainForm : Form
     {
       var analyzer = new VbSolutionAnalyzer();
       var progress = new Progress<SolutionAnalysisProgress>(UpdateAnalysisProgress);
-      _solution = await analyzer.AnalyzeAsync(dialog.FileName, cancellation.Token, progress);
+      _solution = await analyzer.AnalyzeAsync(dialog.FileName, cancellation.Token, progress, trustProjects: true);
       PopulateProjectExplorer(_solution);
       var partialProjects = _solution.Projects.Count(project => project.AnalysisStatus == ProjectAnalysisStatus.Partial);
       var failedProjects = _solution.Projects.Count(project => project.AnalysisStatus == ProjectAnalysisStatus.Failed);

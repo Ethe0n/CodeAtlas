@@ -1,4 +1,5 @@
 using System.Xml.Linq;
+using System.Xml;
 using CodeAtlas.Roslyn.Models;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;
@@ -8,6 +9,14 @@ namespace CodeAtlas.Roslyn;
 
 internal sealed class VbProjectFallbackLoader
 {
+    private readonly AnalysisResourceLimits _limits;
+
+    public VbProjectFallbackLoader(AnalysisResourceLimits? limits = null)
+    {
+        _limits = limits ?? new AnalysisResourceLimits();
+        _limits.Validate();
+    }
+
     public async Task<FallbackProjectLoadResult> LoadAsync(
         string projectFilePath,
         CancellationToken cancellationToken)
@@ -16,7 +25,49 @@ internal sealed class VbProjectFallbackLoader
         var diagnostics = new List<ProjectAnalysisDiagnostic>();
         var specifications = new Dictionary<string, ProjectSpecification>(StringComparer.OrdinalIgnoreCase);
 
-        LoadProjectSpecification(rootProjectPath, specifications, diagnostics);
+        var pending = new Stack<(string Path, int Depth)>();
+        pending.Push((rootProjectPath, 0));
+        var sourceCount = 0;
+        while (pending.TryPop(out var item))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (specifications.ContainsKey(item.Path))
+            {
+                continue;
+            }
+
+            if (item.Depth > _limits.MaxProjectReferenceDepth || specifications.Count >= _limits.MaxProjects)
+            {
+                throw new InvalidDataException("Fallback project graph exceeds its project count or reference depth safety limit.");
+            }
+
+            var specification = await LoadProjectSpecificationAsync(item.Path, diagnostics, cancellationToken).ConfigureAwait(false);
+            if (specification.ProjectReferences.Count > _limits.MaxProjects)
+            {
+                throw new InvalidDataException("Fallback project contains too many project references.");
+            }
+
+            specifications.Add(item.Path, specification);
+            sourceCount += specification.SourceFiles.Count;
+            if (sourceCount > _limits.MaxSourceFiles)
+            {
+                throw new InvalidDataException($"Fallback project graph exceeds the {_limits.MaxSourceFiles}-source-file safety limit.");
+            }
+
+            foreach (var referencedPath in specification.ProjectReferences)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (File.Exists(referencedPath))
+                {
+                    pending.Push((referencedPath, item.Depth + 1));
+                }
+                else
+                {
+                    diagnostics.Add(CreateDiagnostic(ProjectAnalysisDiagnosticSeverity.Warning, "FallbackLoad",
+                        $"Referenced project was not found: {referencedPath}", specification.FilePath));
+                }
+            }
+        }
 
         var workspace = new AdhocWorkspace();
         try
@@ -42,11 +93,12 @@ internal sealed class VbProjectFallbackLoader
                     parseOptions: VisualBasicParseOptions.Default,
                     documents: null,
                     projectReferences: null,
-                    metadataReferences: ResolveMetadataReferences(specification, diagnostics));
+                    metadataReferences: ResolveMetadataReferences(specification, diagnostics, cancellationToken));
 
                 solution = solution.AddProject(projectInfo);
             }
 
+            long totalSourceBytes = 0;
             foreach (var specification in specifications.Values)
             {
                 var sourceProjectId = projectIds[specification.FilePath];
@@ -73,8 +125,16 @@ internal sealed class VbProjectFallbackLoader
                         continue;
                     }
 
-                    var sourceText = SourceText.From(
-                        await File.ReadAllTextAsync(sourceFilePath, cancellationToken).ConfigureAwait(false));
+                    var remainingBytes = _limits.MaxTotalSourceBytes - totalSourceBytes;
+                    if (remainingBytes <= 0)
+                    {
+                        throw new InvalidDataException("Fallback source files exceed the total source byte safety limit.");
+                    }
+
+                    var text = await AnalysisResourceLimits.ReadLimitedTextAsync(
+                        sourceFilePath, (int)Math.Min(_limits.MaxSourceFileBytes, remainingBytes), cancellationToken).ConfigureAwait(false);
+                    totalSourceBytes += text.Bytes;
+                    var sourceText = SourceText.From(text.Text);
                     solution = solution.AddDocument(
                         DocumentId.CreateNewId(sourceProjectId),
                         Path.GetFileName(sourceFilePath),
@@ -100,23 +160,28 @@ internal sealed class VbProjectFallbackLoader
         }
     }
 
-    private static void LoadProjectSpecification(
+    private async Task<ProjectSpecification> LoadProjectSpecificationAsync(
         string projectFilePath,
-        IDictionary<string, ProjectSpecification> specifications,
-        ICollection<ProjectAnalysisDiagnostic> diagnostics)
+        ICollection<ProjectAnalysisDiagnostic> diagnostics,
+        CancellationToken cancellationToken)
     {
         var fullProjectPath = Path.GetFullPath(projectFilePath);
-        if (specifications.ContainsKey(fullProjectPath))
-        {
-            return;
-        }
-
         if (!File.Exists(fullProjectPath))
         {
             throw new FileNotFoundException("Referenced project was not found.", fullProjectPath);
         }
 
-        var document = XDocument.Load(fullProjectPath, LoadOptions.SetLineInfo);
+        var xml = await AnalysisResourceLimits.ReadLimitedTextAsync(
+            fullProjectPath, _limits.MaxProjectBytes, cancellationToken).ConfigureAwait(false);
+        using var input = new StringReader(xml.Text);
+        using var reader = XmlReader.Create(input, new XmlReaderSettings
+        {
+            DtdProcessing = DtdProcessing.Prohibit,
+            XmlResolver = null,
+            MaxCharactersInDocument = _limits.MaxProjectBytes
+        });
+        var document = XDocument.Load(reader, LoadOptions.SetLineInfo);
+        cancellationToken.ThrowIfCancellationRequested();
         var projectDirectory = Path.GetDirectoryName(fullProjectPath)
             ?? throw new InvalidOperationException($"Project directory was not found: {fullProjectPath}");
 
@@ -162,8 +227,6 @@ internal sealed class VbProjectFallbackLoader
             assemblyReferences,
             imports);
 
-        specifications.Add(fullProjectPath, specification);
-
         foreach (var comReference in Elements(document, "COMReference"))
         {
             var referenceName = (string?)comReference.Attribute("Include") ?? "(unnamed COM reference)";
@@ -174,20 +237,7 @@ internal sealed class VbProjectFallbackLoader
                 fullProjectPath));
         }
 
-        foreach (var referencedProjectPath in projectReferences)
-        {
-            if (!File.Exists(referencedProjectPath))
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    ProjectAnalysisDiagnosticSeverity.Warning,
-                    "FallbackLoad",
-                    $"Referenced project was not found: {referencedProjectPath}",
-                    fullProjectPath));
-                continue;
-            }
-
-            LoadProjectSpecification(referencedProjectPath, specifications, diagnostics);
-        }
+        return specification;
     }
 
     private static VisualBasicCompilationOptions CreateCompilationOptions(ProjectSpecification specification)
@@ -211,7 +261,8 @@ internal sealed class VbProjectFallbackLoader
 
     private static IReadOnlyList<MetadataReference> ResolveMetadataReferences(
         ProjectSpecification specification,
-        ICollection<ProjectAnalysisDiagnostic> diagnostics)
+        ICollection<ProjectAnalysisDiagnostic> diagnostics,
+        CancellationToken cancellationToken)
     {
         var references = new Dictionary<string, MetadataReference>(StringComparer.OrdinalIgnoreCase);
         var frameworkDirectory = GetFrameworkReferenceDirectory(specification.TargetFrameworkVersion);
@@ -228,12 +279,14 @@ internal sealed class VbProjectFallbackLoader
         {
             foreach (var assemblyPath in Directory.EnumerateFiles(frameworkDirectory, "*.dll", SearchOption.TopDirectoryOnly))
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 AddMetadataReference(references, assemblyPath);
             }
         }
 
         foreach (var reference in specification.AssemblyReferences)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var assemblyPath = reference.HintPath;
             if (assemblyPath is null && frameworkDirectory is not null)
             {

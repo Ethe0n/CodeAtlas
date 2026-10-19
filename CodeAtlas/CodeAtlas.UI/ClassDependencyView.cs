@@ -9,6 +9,9 @@ namespace CodeAtlas.UI;
 public sealed class ClassDependencyView : UserControl
 {
   private readonly GViewer _viewer = new();
+  private readonly GraphLayoutSession? _layoutSession;
+  internal Graph? LayoutGraph => _viewer.Graph;
+  internal IReadOnlyDictionary<string, string> LayoutSymbols => _nodeTypeSymbols;
   private readonly Dictionary<string, string> _nodeTypeSymbols = new(StringComparer.Ordinal);
   private readonly System.Windows.Forms.Label _emptyLabel = new()
   {
@@ -25,10 +28,17 @@ public sealed class ClassDependencyView : UserControl
 
     _viewer.Dock = DockStyle.Fill;
     _viewer.ToolBarIsVisible = true;
+    _viewer.CustomOpenButtonPressed += (_, args) => args.Handled = true;
     _viewer.MouseDoubleClick += Viewer_MouseDoubleClick;
 
     Controls.Add(_viewer);
     Controls.Add(_emptyLabel);
+    if (!GraphLayoutWorker.IsWorker)
+      _layoutSession = new GraphLayoutSession(this, _viewer, _emptyLabel, symbols =>
+      {
+        _nodeTypeSymbols.Clear();
+        foreach (var pair in symbols) _nodeTypeSymbols.Add(pair.Key, pair.Value);
+      });
 
     ClearGraph();
   }
@@ -39,6 +49,22 @@ public sealed class ClassDependencyView : UserControl
       IReadOnlyList<TypeDependencyRelation> dependencies)
   {
     _nodeTypeSymbols.Clear();
+
+    if (_layoutSession is not null)
+    {
+      var relevantDependencies = dependencies.Where(dependency =>
+          dependency.SourceTypeSymbolId == selectedType.SymbolId || dependency.TargetTypeSymbolId == selectedType.SymbolId).ToArray();
+      var relatedIds = relevantDependencies.SelectMany(dependency =>
+          new[] { dependency.SourceTypeSymbolId, dependency.TargetTypeSymbolId }).ToHashSet(StringComparer.Ordinal);
+      relatedIds.Add(selectedType.SymbolId);
+      _layoutSession.Show(new GraphLayoutRequest
+      {
+        Kind = "Class", SelectedType = GraphLayoutRequest.SlimType(selectedType),
+        Types = types.Where(type => relatedIds.Contains(type.SymbolId)).Select(GraphLayoutRequest.SlimType).ToArray(),
+        Dependencies = relevantDependencies
+      });
+      return;
+    }
 
     var incomingDependencies = dependencies
         .Where(dependency => string.Equals(dependency.TargetTypeSymbolId, selectedType.SymbolId, StringComparison.Ordinal))
@@ -102,6 +128,7 @@ public sealed class ClassDependencyView : UserControl
       graph.LayerConstraints.AddUpDownConstraint(selectedNode, targetNode);
     }
 
+    GraphLayoutWorker.ValidateGraph(graph);
     _viewer.Graph = graph;
     _viewer.Visible = true;
     _emptyLabel.Visible = false;
@@ -110,6 +137,7 @@ public sealed class ClassDependencyView : UserControl
 
   public void ClearGraph()
   {
+    _layoutSession?.Cancel();
     _nodeTypeSymbols.Clear();
     _viewer.Graph = null;
     _viewer.Visible = false;

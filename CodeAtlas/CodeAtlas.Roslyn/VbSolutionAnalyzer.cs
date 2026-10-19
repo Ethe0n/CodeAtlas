@@ -10,21 +10,25 @@ namespace CodeAtlas.Roslyn;
 public sealed class VbSolutionAnalyzer
 {
     private readonly VbSyntaxStructureExtractor _structureExtractor;
+    private readonly AnalysisResourceLimits _resourceLimits;
 
     public VbSolutionAnalyzer()
         : this(new VbSyntaxStructureExtractor())
     {
     }
 
-    public VbSolutionAnalyzer(VbSyntaxStructureExtractor structureExtractor)
+    public VbSolutionAnalyzer(VbSyntaxStructureExtractor structureExtractor, AnalysisResourceLimits? resourceLimits = null)
     {
         _structureExtractor = structureExtractor;
+        _resourceLimits = resourceLimits ?? new AnalysisResourceLimits();
+        _resourceLimits.Validate();
     }
 
     public async Task<SolutionStructure> AnalyzeAsync(
         string solutionFilePath,
         CancellationToken cancellationToken = default,
-        IProgress<SolutionAnalysisProgress>? progress = null)
+        IProgress<SolutionAnalysisProgress>? progress = null,
+        bool trustProjects = false)
     {
         if (string.IsNullOrWhiteSpace(solutionFilePath))
         {
@@ -37,6 +41,15 @@ public sealed class VbSolutionAnalyzer
             throw new FileNotFoundException("Solution file was not found.", fullSolutionPath);
         }
 
+        if (!trustProjects)
+        {
+            throw new InvalidOperationException(
+                "Project loading uses MSBuild and can execute project, imported target, and package build logic. " +
+                "Only analyze trusted solutions. Explicitly set trustProjects to true after reviewing the input.");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        AnalysisResourceLimits.CheckFileSize(fullSolutionPath, _resourceLimits.MaxSolutionBytes);
         EnsureMSBuildRegistered();
 
         progress?.Report(new SolutionAnalysisProgress(
@@ -46,17 +59,42 @@ public sealed class VbSolutionAnalyzer
             SolutionAnalysisStage.DiscoveringProjects));
 
         var solutionProjects = ReadSolutionProjects(fullSolutionPath);
+        if (solutionProjects.Count > _resourceLimits.MaxProjects)
+        {
+            throw new InvalidDataException($"Solution exceeds the {_resourceLimits.MaxProjects}-project safety limit.");
+        }
         var projects = new List<ProjectStructure>();
         for (var projectIndex = 0; projectIndex < solutionProjects.Count; projectIndex++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var solutionProject = solutionProjects[projectIndex];
-            var analyzedProject = await AnalyzeProjectFileAsync(
-                solutionProject,
-                solutionProjects.Count,
-                projectIndex,
-                progress,
-                cancellationToken).ConfigureAwait(false);
+            using var projectCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            projectCancellation.CancelAfter(_resourceLimits.ProjectTimeout);
+            ProjectStructure analyzedProject;
+            try
+            {
+                AnalysisResourceLimits.CheckFileSize(solutionProject.FilePath, _resourceLimits.MaxProjectBytes);
+                analyzedProject = await AnalyzeProjectFileAsync(
+                    solutionProject,
+                    solutionProjects.Count,
+                    projectIndex,
+                    progress,
+                    projectCancellation.Token).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (!cancellationToken.IsCancellationRequested &&
+                (exception is IOException or UnauthorizedAccessException || projectCancellation.IsCancellationRequested))
+            {
+                analyzedProject = new ProjectStructure(
+                    solutionProject.Id, solutionProject.Name, solutionProject.FilePath,
+                    LanguageNames.VisualBasic, [], [], [], [], [])
+                {
+                    AnalysisStatus = ProjectAnalysisStatus.Failed,
+                    Diagnostics = [new ProjectAnalysisDiagnostic(
+                        ProjectAnalysisDiagnosticSeverity.Error, "ResourceLimit",
+                        projectCancellation.IsCancellationRequested ? "Project analysis exceeded its time limit." : exception.Message,
+                        solutionProject.FilePath)]
+                };
+            }
             projects.Add(analyzedProject);
             ReportProgress(
                 progress,
@@ -163,7 +201,7 @@ public sealed class VbSolutionAnalyzer
                 solutionProject.Name,
                 SolutionAnalysisStage.LoadingFallback);
 
-            var loader = new VbProjectFallbackLoader();
+            var loader = new VbProjectFallbackLoader(_resourceLimits);
             using var fallbackProject = await loader.LoadAsync(
                 solutionProject.FilePath,
                 cancellationToken).ConfigureAwait(false);
@@ -252,6 +290,7 @@ public sealed class VbSolutionAnalyzer
             projectName,
             SolutionAnalysisStage.CompilingProject);
 
+        ValidateCompilationInputs(project, cancellationToken);
         var compilation = await project.GetCompilationAsync(cancellationToken).ConfigureAwait(false);
         if (compilation is null)
         {
@@ -364,6 +403,37 @@ public sealed class VbSolutionAnalyzer
                 .Where(flow => !generatedMethodIds.Contains(flow.MethodId))
                 .OrderBy(flow => flow.MethodName, StringComparer.Ordinal)
                 .ToArray());
+    }
+
+    private void ValidateCompilationInputs(Project project, CancellationToken cancellationToken)
+    {
+        long sourceBytes = 0;
+        var sourceFiles = 0;
+        if (project.Solution.ProjectIds.Count > _resourceLimits.MaxProjects)
+        {
+            throw new InvalidDataException("Loaded workspace exceeds the project count safety limit.");
+        }
+
+        foreach (var loadedProject in project.Solution.Projects)
+        {
+            foreach (var document in loadedProject.Documents)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (++sourceFiles > _resourceLimits.MaxSourceFiles)
+                {
+                    throw new InvalidDataException("Loaded workspace exceeds the source file count safety limit.");
+                }
+
+                if (document.FilePath is { } path && File.Exists(path))
+                {
+                    sourceBytes += AnalysisResourceLimits.CheckFileSize(path, _resourceLimits.MaxSourceFileBytes);
+                    if (sourceBytes > _resourceLimits.MaxTotalSourceBytes)
+                    {
+                        throw new InvalidDataException("Loaded workspace exceeds the total source byte safety limit.");
+                    }
+                }
+            }
+        }
     }
 
     private static IReadOnlyList<TypeStructure> MergePartialTypes(IEnumerable<TypeStructure> types)

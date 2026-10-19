@@ -9,6 +9,9 @@ namespace CodeAtlas.UI;
 public sealed class CallGraphView : UserControl
 {
   private readonly GViewer _viewer = new();
+  private readonly GraphLayoutSession? _layoutSession;
+  internal Graph? LayoutGraph => _viewer.Graph;
+  internal IReadOnlyDictionary<string, string> LayoutSymbols => _nodeMethodSymbols;
   private readonly Dictionary<string, string> _nodeMethodSymbols = new(StringComparer.Ordinal);
   private readonly System.Windows.Forms.Label _emptyLabel = new()
   {
@@ -25,10 +28,17 @@ public sealed class CallGraphView : UserControl
 
     _viewer.Dock = DockStyle.Fill;
     _viewer.ToolBarIsVisible = true;
+    _viewer.CustomOpenButtonPressed += (_, args) => args.Handled = true;
     _viewer.MouseDoubleClick += Viewer_MouseDoubleClick;
 
     Controls.Add(_viewer);
     Controls.Add(_emptyLabel);
+    if (!GraphLayoutWorker.IsWorker)
+      _layoutSession = new GraphLayoutSession(this, _viewer, _emptyLabel, symbols =>
+      {
+        _nodeMethodSymbols.Clear();
+        foreach (var pair in symbols) _nodeMethodSymbols.Add(pair.Key, pair.Value);
+      });
 
     ClearGraph();
   }
@@ -39,6 +49,16 @@ public sealed class CallGraphView : UserControl
     IReadOnlyList<CallRelation> outgoingCalls)
   {
     _nodeMethodSymbols.Clear();
+
+    if (_layoutSession is not null)
+    {
+      _layoutSession.Show(new GraphLayoutRequest
+      {
+        Kind = "Calls", Method = method, Incoming = incomingCalls.ToArray(),
+        Outgoing = outgoingCalls.Where(call => call.IsProjectInternal).ToArray()
+      });
+      return;
+    }
 
     var graph = new Graph(method.Name)
     {
@@ -106,6 +126,7 @@ public sealed class CallGraphView : UserControl
           calleeNode);
     }
 
+    GraphLayoutWorker.ValidateGraph(graph);
     _viewer.Graph = graph;
     _viewer.Visible = true;
     _emptyLabel.Visible = false;
@@ -114,6 +135,7 @@ public sealed class CallGraphView : UserControl
 
   public void ClearGraph()
   {
+    _layoutSession?.Cancel();
     _nodeMethodSymbols.Clear();
     _viewer.Graph = null;
     _viewer.Visible = false;

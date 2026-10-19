@@ -9,6 +9,9 @@ namespace CodeAtlas.UI;
 public sealed class ProjectDependencyView : UserControl
 {
   private readonly GViewer _viewer = new();
+  private readonly GraphLayoutSession? _layoutSession;
+  internal Graph? LayoutGraph => _viewer.Graph;
+  internal IReadOnlyDictionary<string, string> LayoutSymbols => _nodeTypeSymbols;
   private readonly Dictionary<string, string> _nodeTypeSymbols = new(StringComparer.Ordinal);
   private readonly System.Windows.Forms.Label _emptyLabel = new()
   {
@@ -25,10 +28,17 @@ public sealed class ProjectDependencyView : UserControl
 
     _viewer.Dock = DockStyle.Fill;
     _viewer.ToolBarIsVisible = true;
+    _viewer.CustomOpenButtonPressed += (_, args) => args.Handled = true;
     _viewer.MouseDoubleClick += Viewer_MouseDoubleClick;
 
     Controls.Add(_viewer);
     Controls.Add(_emptyLabel);
+    if (!GraphLayoutWorker.IsWorker)
+      _layoutSession = new GraphLayoutSession(this, _viewer, _emptyLabel, symbols =>
+      {
+        _nodeTypeSymbols.Clear();
+        foreach (var pair in symbols) _nodeTypeSymbols.Add(pair.Key, pair.Value);
+      });
 
     ClearGraph();
   }
@@ -36,6 +46,19 @@ public sealed class ProjectDependencyView : UserControl
   public void ShowGraph(ProjectStructure project)
   {
     _nodeTypeSymbols.Clear();
+
+    if (_layoutSession is not null)
+    {
+      var relatedIds = project.TypeDependencies.SelectMany(dependency =>
+          new[] { dependency.SourceTypeSymbolId, dependency.TargetTypeSymbolId }).ToHashSet(StringComparer.Ordinal);
+      _layoutSession.Show(new GraphLayoutRequest
+      {
+        Kind = "Project", ProjectName = project.Name,
+        Types = project.Types.Where(type => relatedIds.Contains(type.SymbolId)).Select(GraphLayoutRequest.SlimType).ToArray(),
+        Dependencies = project.TypeDependencies.ToArray()
+      });
+      return;
+    }
 
     var typesById = project.Types
         .GroupBy(type => type.SymbolId, StringComparer.Ordinal)
@@ -87,6 +110,7 @@ public sealed class ProjectDependencyView : UserControl
       graph.LayerConstraints.AddUpDownConstraint(sourceNode, targetNode);
     }
 
+    GraphLayoutWorker.ValidateGraph(graph);
     _viewer.Graph = graph;
     _viewer.Visible = true;
     _emptyLabel.Visible = false;
@@ -95,6 +119,7 @@ public sealed class ProjectDependencyView : UserControl
 
   public void ClearGraph()
   {
+    _layoutSession?.Cancel();
     _nodeTypeSymbols.Clear();
     _viewer.Graph = null;
     _viewer.Visible = false;

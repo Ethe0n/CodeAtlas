@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="CodeAtlas.SecurityChecks" />
     <ProjectReference Include="..\CodeAtlas.Roslyn\CodeAtlas.Roslyn.csproj" />
   </ItemGroup>
 

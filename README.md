@@ -1,6 +1,9 @@
 # CodeAtlas
 CodeAtlas - VB(Visual Basic) .net code analyzer
 
+Security: only open trusted solutions. MSBuild loading can execute build logic.
+The console requires `--trust-projects`; see [security boundaries and checks](SECURITY.md).
+
 <img width="960" height="673" alt="Image" src="https://github.com/user-attachments/assets/d3b398d0-e045-4d80-828b-3a25ee32c4c8" />
 
 <img width="960" height="673" alt="Image" src="https://github.com/user-attachments/assets/5380992d-3840-4732-8b7b-25887ff274ad" />

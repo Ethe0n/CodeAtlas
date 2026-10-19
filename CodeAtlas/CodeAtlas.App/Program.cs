@@ -3,12 +3,20 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 
 var parsedArgs = ParseArgs(args);
+if (!parsedArgs.TrustProjects)
+{
+    Console.Error.WriteLine("MSBuild project loading can execute project/import/package build logic. " +
+        "Review and trust the input, then explicitly pass --trust-projects. This is not a sandbox.");
+    Environment.ExitCode = 2;
+    return;
+}
+
 var solutionPath = parsedArgs.SolutionPath is not null
     ? parsedArgs.SolutionPath
     : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "sample_project", "sample_project.sln"));
 
 var analyzer = new VbSolutionAnalyzer();
-var structure = await analyzer.AnalyzeAsync(solutionPath);
+var structure = await analyzer.AnalyzeAsync(solutionPath, trustProjects: true);
 
 if (parsedArgs.JsonOutputPath is not null)
 {
@@ -133,14 +141,21 @@ foreach (var project in structure.Projects)
     }
 }
 
-static (string? SolutionPath, string? JsonOutputPath) ParseArgs(string[] args)
+static (string? SolutionPath, string? JsonOutputPath, bool TrustProjects) ParseArgs(string[] args)
 {
     string? solutionPath = null;
     string? jsonOutputPath = null;
+    var trustProjects = false;
 
     for (var index = 0; index < args.Length; index++)
     {
         var arg = args[index];
+        if (string.Equals(arg, "--trust-projects", StringComparison.OrdinalIgnoreCase))
+        {
+            trustProjects = true;
+            continue;
+        }
+
         if (string.Equals(arg, "--json", StringComparison.OrdinalIgnoreCase))
         {
             jsonOutputPath = index + 1 < args.Length && !args[index + 1].StartsWith("--", StringComparison.Ordinal)
@@ -152,5 +167,5 @@ static (string? SolutionPath, string? JsonOutputPath) ParseArgs(string[] args)
         solutionPath ??= arg;
     }
 
-    return (solutionPath, jsonOutputPath);
+    return (solutionPath, jsonOutputPath, trustProjects);
 }

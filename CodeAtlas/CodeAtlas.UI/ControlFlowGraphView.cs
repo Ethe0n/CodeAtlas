@@ -17,6 +17,8 @@ public sealed class ControlFlowGraphView : UserControl
   private const long MaxExportPixels = 40_000_000;
 
   private readonly GViewer _viewer = new();
+  private readonly GraphLayoutSession? _layoutSession;
+  internal Graph? LayoutGraph => _viewer.Graph;
   private readonly ControlFlowPresentationBuilder _presentationBuilder = new();
   private readonly System.Windows.Forms.Label _emptyLabel = new()
   {
@@ -31,9 +33,12 @@ public sealed class ControlFlowGraphView : UserControl
 
     _viewer.Dock = DockStyle.Fill;
     _viewer.ToolBarIsVisible = true;
+    _viewer.CustomOpenButtonPressed += (_, args) => args.Handled = true;
 
     Controls.Add(_viewer);
     Controls.Add(_emptyLabel);
+    if (!GraphLayoutWorker.IsWorker)
+      _layoutSession = new GraphLayoutSession(this, _viewer, _emptyLabel);
 
     ClearGraph();
   }
@@ -271,6 +276,12 @@ public sealed class ControlFlowGraphView : UserControl
       return;
     }
 
+    if (_layoutSession is not null)
+    {
+      _layoutSession.Show(new GraphLayoutRequest { Kind = "Flow", Flow = controlFlow });
+      return;
+    }
+
     var presentation = _presentationBuilder.Build(controlFlow);
     var graph = new Graph(presentation.MethodName)
     {
@@ -338,6 +349,7 @@ public sealed class ControlFlowGraphView : UserControl
         conditionalMergeTargets);
     ApplyExceptionRegionConstraints(graph, presentation);
 
+    GraphLayoutWorker.ValidateGraph(graph);
     if (selectCaseFanouts.Count > 0)
     {
       _viewer.CalculateLayout(graph);
@@ -362,6 +374,7 @@ public sealed class ControlFlowGraphView : UserControl
   }
 
   public bool CanExport => _viewer.Graph?.GeometryGraph is not null;
+  public Task WaitForLayoutAsync() => _layoutSession?.Completion ?? Task.CompletedTask;
 
   public void ExportImage(IWin32Window owner)
   {
@@ -446,6 +459,7 @@ public sealed class ControlFlowGraphView : UserControl
 
   public void ClearGraph()
   {
+    _layoutSession?.Cancel();
     _viewer.Graph = null;
     _viewer.Visible = false;
     _emptyLabel.Visible = true;
