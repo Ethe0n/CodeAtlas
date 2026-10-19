@@ -1,5 +1,6 @@
 using CodeAtlas.Roslyn;
 using CodeAtlas.Roslyn.Models;
+using CodeAtlas.Lint;
 
 namespace CodeAtlas.UI;
 
@@ -11,6 +12,8 @@ public sealed class MainForm : Form
   private readonly TabPage _overviewTab = new("Overview");
   private readonly TabPage _relationsTab = new("Relations");
   private readonly TabPage _flowTab = new("Flow");
+  private readonly TabPage _diagnosticsTab = new("Diagnostics");
+  private readonly DiagnosticsView _diagnosticsView = new();
   private readonly Panel _relationsHost = new() { Dock = DockStyle.Fill };
   private readonly Panel _flowHost = new() { Dock = DockStyle.Fill };
   private readonly Panel _overviewHost = new() { Dock = DockStyle.Fill };
@@ -86,6 +89,7 @@ public sealed class MainForm : Form
     _fieldListView.FieldActivated += ShowFieldFromList;
     _propertyListView.PropertyActivated += ShowPropertyFromList;
     _userInterfaceView.MethodSelected += SelectMethodNodeBySymbolId;
+    _diagnosticsView.DiagnosticActivated += SelectDiagnostic;
     _projectSearchView.NodeSelected += node =>
     {
       node.EnsureVisible();
@@ -149,6 +153,8 @@ public sealed class MainForm : Form
     _detailsTabs.TabPages.Add(_overviewTab);
     _detailsTabs.TabPages.Add(_relationsTab);
     _detailsTabs.TabPages.Add(_flowTab);
+    _diagnosticsTab.Controls.Add(_diagnosticsView);
+    _detailsTabs.TabPages.Add(_diagnosticsTab);
     _mainSplitContainer.Panel2.Controls.Add(_detailsTabs);
 
     var statusStrip = new StatusStrip();
@@ -245,8 +251,12 @@ public sealed class MainForm : Form
     {
       var analyzer = new VbSolutionAnalyzer();
       var progress = new Progress<SolutionAnalysisProgress>(UpdateAnalysisProgress);
-      _solution = await analyzer.AnalyzeAsync(dialog.FileName, cancellation.Token, progress, trustProjects: true);
+      var solution = await analyzer.AnalyzeAsync(dialog.FileName, cancellation.Token, progress, trustProjects: true);
+      _statusLabel.Text = "Running diagnostics...";
+      var lintResult = await Task.Run(() => new LintAnalyzer().Analyze(solution, cancellation.Token), cancellation.Token);
+      _solution = solution;
       PopulateProjectExplorer(_solution);
+      _diagnosticsView.ShowResult(lintResult);
       var partialProjects = _solution.Projects.Count(project => project.AnalysisStatus == ProjectAnalysisStatus.Partial);
       var failedProjects = _solution.Projects.Count(project => project.AnalysisStatus == ProjectAnalysisStatus.Failed);
       _statusLabel.Text = partialProjects == 0 && failedProjects == 0
@@ -278,6 +288,7 @@ public sealed class MainForm : Form
     UseWaitCursor = true;
     _projectExplorer.Enabled = false;
     _projectSearchView.Enabled = false;
+    _diagnosticsView.Enabled = false;
     _openSolutionMenuItem.Enabled = false;
     _statusLabel.Text = "Reading solution...";
     _analysisProgressBar.Style = ProgressBarStyle.Marquee;
@@ -291,6 +302,7 @@ public sealed class MainForm : Form
   {
     _projectExplorer.Enabled = true;
     _projectSearchView.Enabled = _projectExplorer.Nodes.Count > 0;
+    _diagnosticsView.Enabled = true;
     _openSolutionMenuItem.Enabled = true;
     _analysisProgressBar.Visible = false;
     _cancelAnalysisButton.Visible = false;
@@ -954,6 +966,31 @@ public sealed class MainForm : Form
     _projectExplorer.SelectedNode = node;
   }
 
+  private void SelectDiagnostic(LintDiagnostic diagnostic)
+  {
+    if (_solution is null) return;
+    var project = _solution.Projects.FirstOrDefault(project => project.Id == diagnostic.ProjectId);
+    if (project is null) return;
+    var projectNode = _projectExplorer.Nodes.Cast<TreeNode>()
+        .FirstOrDefault(node => node.Tag is ProjectStructure owner && owner.Id == project.Id);
+    if (projectNode is null) return;
+
+    var node = diagnostic.SymbolId is { } symbolId ? FindMethodNode(projectNode.Nodes, symbolId) : null;
+    node ??= diagnostic.ContainingTypeSymbolId is { } typeId ? FindTypeNode(projectNode.Nodes, typeId) : null;
+    node ??= projectNode;
+    node.EnsureVisible();
+    _projectExplorer.SelectedNode = node;
+
+    if (diagnostic.SymbolId is { } fieldId && node.Tag is TypeNodeContext typeContext &&
+        typeContext.Type.Fields.FirstOrDefault(field => field.SymbolId == fieldId) is { } field)
+    {
+      ClearDetails();
+      ShowFieldOverview(new FieldNodeContext(project, typeContext.Type, field));
+    }
+
+    _detailsTabs.SelectedTab = _overviewTab;
+  }
+
   private static TreeNode? FindMethodNode(TreeNodeCollection nodes, string methodSymbolId)
   {
     foreach (TreeNode node in nodes)
@@ -1056,6 +1093,12 @@ public sealed class MainForm : Form
       bool relationsAvailable,
       bool flowAvailable)
   {
+    if (previousTab == _diagnosticsTab)
+    {
+      _detailsTabs.SelectedTab = _diagnosticsTab;
+      return;
+    }
+
     if (previousTab == _relationsTab && relationsAvailable)
     {
       _detailsTabs.SelectedTab = _relationsTab;

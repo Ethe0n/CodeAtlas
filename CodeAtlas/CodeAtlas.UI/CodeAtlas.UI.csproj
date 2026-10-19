@@ -11,6 +11,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="CodeAtlas.SecurityChecks" />
     <ProjectReference Include="..\CodeAtlas.Roslyn\CodeAtlas.Roslyn.csproj" />
+    <ProjectReference Include="..\CodeAtlas.Lint\CodeAtlas.Lint.csproj" />
   </ItemGroup>
 
   <ItemGroup>

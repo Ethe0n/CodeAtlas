@@ -6,6 +6,7 @@ using System.Xml;
 using CodeAtlas.Roslyn;
 using CodeAtlas.Roslyn.Models;
 using CodeAtlas.UI;
+using CodeAtlas.Lint;
 using Microsoft.Build.Locator;
 using Microsoft.Msagl.Drawing;
 using Microsoft.Msagl.GraphViewerGdi;
@@ -39,6 +40,7 @@ internal static class Program
       CheckToolbar();
       CheckGraphIsolation(solution);
       CheckUiGraphs(solution, root);
+      CheckDiagnosticsUi(solution, root);
       Console.WriteLine($"PASS: {_passed} security/regression checks");
       return 0;
     }
@@ -240,6 +242,62 @@ internal static class Program
       Assert(true, $"{flow.MethodName}: node/edge styles and serialized geometry preserved");
     }
     finally { mode.SetValue(null, false); }
+  }
+
+  private static void CheckDiagnosticsUi(SolutionStructure solution, string root)
+  {
+    var result = new LintAnalyzer().Analyze(solution);
+    using var form = new MainForm();
+    _ = form.Handle;
+    var flags = BindingFlags.Instance | BindingFlags.NonPublic;
+    var formType = typeof(MainForm);
+    var tabs = (TabControl)formType.GetField("_detailsTabs", flags)!.GetValue(form)!;
+    Assert(tabs.TabPages.Cast<TabPage>().Select(tab => tab.Text).SequenceEqual(
+        new[] { "Overview", "Relations", "Flow", "Diagnostics" }), "Diagnostics added without replacing graph tabs");
+    var diagnostics = (DiagnosticsView)formType.GetField("_diagnosticsView", flags)!.GetValue(form)!;
+    diagnostics.ShowResult(result);
+    var grid = (DataGridView)typeof(DiagnosticsView).GetField("_grid", flags)!.GetValue(diagnostics)!;
+    Assert(grid.VirtualMode && grid.RowCount == result.Diagnostics.Count, "Diagnostic rows use the existing virtual grid");
+    var severity = (ComboBox)typeof(DiagnosticsView).GetField("_severity", flags)!.GetValue(diagnostics)!;
+    severity.SelectedItem = LintSeverity.Warning;
+    Assert(grid.RowCount == result.Diagnostics.Count(item => item.Severity == LintSeverity.Warning), "Diagnostics severity filter uses model values");
+    severity.SelectedIndex = 0;
+    if (grid.RowCount > 0)
+    {
+      grid.CurrentCell = grid.Rows[0].Cells[0];
+      var details = (TextBox)typeof(DiagnosticsView).GetField("_details", flags)!.GetValue(diagnostics)!;
+      Assert(details.Text.Contains("Recommendation", StringComparison.Ordinal), "Selected diagnostic displays evidence and recommendation");
+    }
+
+    var owner = solution.Projects.First(project => project.Types.Count > 0);
+    var copy = owner with { Id = "duplicate-project-id", Name = owner.Name };
+    var duplicated = solution with { Projects = [owner, copy] };
+    formType.GetField("_solution", flags)!.SetValue(form, duplicated);
+    formType.GetMethod("PopulateProjectExplorer", flags)!.Invoke(form, [duplicated]);
+    var methodFinding = result.Diagnostics.First(item => item.RuleId == "CAL1001") with { ProjectId = copy.Id };
+    formType.GetMethod("SelectDiagnostic", flags)!.Invoke(form, [methodFinding]);
+    var tree = (TreeView)formType.GetField("_projectExplorer", flags)!.GetValue(form)!;
+    var selected = tree.SelectedNode;
+    var projectNode = selected;
+    while (projectNode?.Parent is not null) projectNode = projectNode.Parent;
+    Assert(projectNode?.Tag is ProjectStructure project && project.Id == copy.Id &&
+        selected?.Tag?.GetType().GetProperty("Method")?.GetValue(selected.Tag) is MethodStructure method &&
+        method.SymbolId == methodFinding.SymbolId, "Diagnostic navigation uses ProjectId plus SymbolId, not names");
+    Assert(tabs.SelectedTab?.Text == "Overview", "Diagnostic activation returns to the existing Overview");
+    tabs.SelectedIndex = 3;
+    tree.SelectedNode = tree.Nodes[0];
+    Assert(tabs.SelectedTab?.Text == "Diagnostics", "Ordinary TreeView selections preserve the Diagnostics tab");
+    formType.GetField("_solution", flags)!.SetValue(form, solution);
+    formType.GetMethod("PopulateProjectExplorer", flags)!.Invoke(form, [solution]);
+    diagnostics.ShowResult(result);
+    grid.CurrentCell = grid.Rows[0].Cells[0];
+    tabs.SelectedIndex = 3;
+    form.Show();
+    Application.DoEvents();
+    using var bitmap = new System.Drawing.Bitmap(form.Width, form.Height);
+    form.DrawToBitmap(bitmap, new System.Drawing.Rectangle(System.Drawing.Point.Empty, form.Size));
+    bitmap.Save(Path.Combine(root, "artifacts", "lint-diagnostics.png"));
+    form.Hide();
   }
 
   private static void CheckTopology(Graph graph, ControlFlowPresentation presentation)

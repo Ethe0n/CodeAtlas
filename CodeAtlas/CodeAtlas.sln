@@ -9,12 +9,18 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodeAtlas.Roslyn", "CodeAtl
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodeAtlas.UI", "CodeAtlas.UI\CodeAtlas.UI.csproj", "{E0584B0B-9C10-4910-8B2B-E6BC591F34AE}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodeAtlas.Lint", "CodeAtlas.Lint\CodeAtlas.Lint.csproj", "{CF82E021-C761-4B8C-868E-8F5EEFDDB121}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{CF82E021-C761-4B8C-868E-8F5EEFDDB121}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CF82E021-C761-4B8C-868E-8F5EEFDDB121}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CF82E021-C761-4B8C-868E-8F5EEFDDB121}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CF82E021-C761-4B8C-868E-8F5EEFDDB121}.Release|Any CPU.Build.0 = Release|Any CPU
 		{09F2FE3C-1186-4F5C-B06A-F4E9E530E262}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{09F2FE3C-1186-4F5C-B06A-F4E9E530E262}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{09F2FE3C-1186-4F5C-B06A-F4E9E530E262}.Release|Any CPU.ActiveCfg = Release|Any CPU
