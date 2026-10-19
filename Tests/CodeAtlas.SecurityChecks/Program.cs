@@ -246,50 +246,109 @@ internal static class Program
 
   private static void CheckDiagnosticsUi(SolutionStructure solution, string root)
   {
-    var result = new LintAnalyzer().Analyze(solution);
+    var owner = solution.Projects.First(project => project.Types.Count > 0);
+    var result = new LintAnalyzer().AnalyzeProject(owner);
     using var form = new MainForm();
     _ = form.Handle;
     var flags = BindingFlags.Instance | BindingFlags.NonPublic;
     var formType = typeof(MainForm);
     var tabs = (TabControl)formType.GetField("_detailsTabs", flags)!.GetValue(form)!;
+    _ = tabs.Handle;
     Assert(tabs.TabPages.Cast<TabPage>().Select(tab => tab.Text).SequenceEqual(
-        new[] { "Overview", "Relations", "Flow", "Diagnostics" }), "Diagnostics added without replacing graph tabs");
+        new[] { "Overview", "Relations", "Flow", "진단" }), "Korean Diagnostics tab does not replace graph tabs");
     var diagnostics = (DiagnosticsView)formType.GetField("_diagnosticsView", flags)!.GetValue(form)!;
-    diagnostics.ShowResult(result);
+    diagnostics.ShowResult(owner.Name, result);
     var grid = (DataGridView)typeof(DiagnosticsView).GetField("_grid", flags)!.GetValue(diagnostics)!;
     Assert(grid.VirtualMode && grid.RowCount == result.Diagnostics.Count, "Diagnostic rows use the existing virtual grid");
     var severity = (ComboBox)typeof(DiagnosticsView).GetField("_severity", flags)!.GetValue(diagnostics)!;
+    var category = (ComboBox)typeof(DiagnosticsView).GetField("_category", flags)!.GetValue(diagnostics)!;
+    Assert(severity.GetItemText(LintSeverity.Warning) == "경고" && severity.GetItemText(LintSeverity.Info) == "정보" &&
+        category.GetItemText(LintCategory.AnalysisCoverage) == "분석 범위" &&
+        category.GetItemText(LintCategory.Reliability) == "안정성" &&
+        category.GetItemText(LintCategory.Security) == "보안" &&
+        category.GetItemText(LintCategory.Interop) == "COM 상호 운용" &&
+        category.GetItemText(LintCategory.Maintainability) == "유지보수성", "Diagnostic filter labels are Korean; items remain enums");
+    Assert(grid.Columns.Cast<DataGridViewColumn>().Select(column => column.HeaderText).SequenceEqual(
+        new[] { "수준", "규칙", "분류", "진단 내용", "프로젝트", "파일", "줄" }), "Diagnostic grid headers are Korean");
     severity.SelectedItem = LintSeverity.Warning;
     Assert(grid.RowCount == result.Diagnostics.Count(item => item.Severity == LintSeverity.Warning), "Diagnostics severity filter uses model values");
+    Assert(grid.RowCount > 0 && (string?)grid.Rows[0].Cells[0].Value == "경고", "Diagnostic grid displays Korean severity");
     severity.SelectedIndex = 0;
+    category.SelectedItem = LintCategory.Reliability;
+    Assert(grid.RowCount == result.Diagnostics.Count(item => item.Category == LintCategory.Reliability),
+        "Korean category filter still compares enum values");
+    category.SelectedIndex = 0;
     if (grid.RowCount > 0)
     {
       grid.CurrentCell = grid.Rows[0].Cells[0];
       var details = (TextBox)typeof(DiagnosticsView).GetField("_details", flags)!.GetValue(diagnostics)!;
-      Assert(details.Text.Contains("Recommendation", StringComparison.Ordinal), "Selected diagnostic displays evidence and recommendation");
+      Assert(details.Text.Contains("권장 조치", StringComparison.Ordinal) &&
+          details.Text.Contains("판단: 직접 검토 필요", StringComparison.Ordinal) &&
+          details.Text.Contains("심볼 ID: M:", StringComparison.Ordinal),
+          "Selected diagnostic displays Korean explanations while preserving symbol identity");
     }
 
-    var owner = solution.Projects.First(project => project.Types.Count > 0);
     var copy = owner with { Id = "duplicate-project-id", Name = owner.Name };
-    var duplicated = solution with { Projects = [owner, copy] };
+    var clean = owner with { Id = "clean-project-id", Name = "Clean", Types = [], Calls = [], ControlFlows = [] };
+    var duplicated = solution with { Projects = [owner, copy, clean] };
+    formType.GetMethod("ResetProjectDiagnostics", flags)!.Invoke(form, null);
     formType.GetField("_solution", flags)!.SetValue(form, duplicated);
     formType.GetMethod("PopulateProjectExplorer", flags)!.Invoke(form, [duplicated]);
+    var tree = (TreeView)formType.GetField("_projectExplorer", flags)!.GetValue(form)!;
+    _ = tree.Handle;
+    var cache = (Dictionary<string, LintResult>)formType.GetField("_projectDiagnostics", flags)!.GetValue(form)!;
+    Assert(cache.Count == 0, "Loading a solution does not lint all projects");
+    tree.SelectedNode = tree.Nodes[0];
+    Assert(cache.Count == 0, "Selecting a project outside Diagnostics does not eagerly lint it");
+    tabs.SelectedIndex = 3;
+    PumpUntil(() => formType.GetField("_diagnosticsCancellation", flags)!.GetValue(form) is null, TimeSpan.FromSeconds(5));
+    Assert(cache.Count == 1 && cache.ContainsKey(owner.Id) && !cache.ContainsKey(copy.Id),
+        "Diagnostics analyzes only the selected project");
+    var firstResult = cache[owner.Id];
+    tree.SelectedNode = tree.Nodes[1];
+    PumpUntil(() => formType.GetField("_diagnosticsCancellation", flags)!.GetValue(form) is null, TimeSpan.FromSeconds(5));
+    var displayed = (LintResult?)typeof(DiagnosticsView).GetField("_result", flags)!.GetValue(diagnostics);
+    Assert(cache.Count == 2 && displayed is not null && displayed.ProjectCount == 1 &&
+        displayed.Diagnostics.All(item => item.ProjectId == copy.Id), "Project switch replaces rows without mixing same-named projects");
+    tree.SelectedNode = tree.Nodes[0];
+    Assert(ReferenceEquals(cache[owner.Id], firstResult) &&
+        ReferenceEquals(typeof(DiagnosticsView).GetField("_result", flags)!.GetValue(diagnostics), firstResult),
+        "Returning to a project reuses only that project's cached diagnostics");
+    tree.SelectedNode = tree.Nodes[1];
+    tree.SelectedNode = tree.Nodes[0];
+    Application.DoEvents();
+    Assert(((LintResult)typeof(DiagnosticsView).GetField("_result", flags)!.GetValue(diagnostics)!).Diagnostics
+        .All(item => item.ProjectId == owner.Id), "Rapid project switching does not display a stale result");
+    tree.SelectedNode = tree.Nodes[2];
+    PumpUntil(() => formType.GetField("_diagnosticsCancellation", flags)!.GetValue(form) is null, TimeSpan.FromSeconds(5));
+    Assert(grid.RowCount == 0 && cache[clean.Id].Diagnostics.Count == 0,
+        "A project with no findings does not retain another project's rows");
+    var summary = (System.Windows.Forms.Label)typeof(DiagnosticsView).GetField("_summary", flags)!.GetValue(diagnostics)!;
+    Assert(summary.Text.Contains("진단 0건 중 0건 표시", StringComparison.Ordinal) &&
+        summary.Text.Contains("현재 v1 규칙에서 발견된 항목이 없습니다.", StringComparison.Ordinal),
+        "Empty diagnostic results explain the rule scope in Korean");
     var methodFinding = result.Diagnostics.First(item => item.RuleId == "CAL1001") with { ProjectId = copy.Id };
     formType.GetMethod("SelectDiagnostic", flags)!.Invoke(form, [methodFinding]);
-    var tree = (TreeView)formType.GetField("_projectExplorer", flags)!.GetValue(form)!;
     var selected = tree.SelectedNode;
     var projectNode = selected;
     while (projectNode?.Parent is not null) projectNode = projectNode.Parent;
     Assert(projectNode?.Tag is ProjectStructure project && project.Id == copy.Id &&
         selected?.Tag?.GetType().GetProperty("Method")?.GetValue(selected.Tag) is MethodStructure method &&
         method.SymbolId == methodFinding.SymbolId, "Diagnostic navigation uses ProjectId plus SymbolId, not names");
+    Assert(ReferenceEquals(typeof(DiagnosticsView).GetField("_result", flags)!.GetValue(diagnostics), cache[copy.Id]),
+        "Selecting a method keeps its owning project's diagnostic scope");
     Assert(tabs.SelectedTab?.Text == "Overview", "Diagnostic activation returns to the existing Overview");
     tabs.SelectedIndex = 3;
     tree.SelectedNode = tree.Nodes[0];
-    Assert(tabs.SelectedTab?.Text == "Diagnostics", "Ordinary TreeView selections preserve the Diagnostics tab");
+    Assert(tabs.SelectedTab?.Text == "진단", "Ordinary TreeView selections preserve the Diagnostics tab");
+    formType.GetMethod("ResetProjectDiagnostics", flags)!.Invoke(form, null);
+    Assert(cache.Count == 0 && grid.RowCount == 0, "Solution replacement clears all old project diagnostics");
     formType.GetField("_solution", flags)!.SetValue(form, solution);
     formType.GetMethod("PopulateProjectExplorer", flags)!.Invoke(form, [solution]);
-    diagnostics.ShowResult(result);
+    tree.SelectedNode = tree.Nodes[0];
+    tabs.SelectedIndex = 3;
+    formType.GetMethod("EnsureSelectedGraphLoaded", flags)!.Invoke(form, null);
+    PumpUntil(() => formType.GetField("_diagnosticsCancellation", flags)!.GetValue(form) is null, TimeSpan.FromSeconds(5));
     grid.CurrentCell = grid.Rows[0].Cells[0];
     tabs.SelectedIndex = 3;
     form.Show();

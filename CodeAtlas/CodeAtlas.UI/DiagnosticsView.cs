@@ -5,11 +5,12 @@ namespace CodeAtlas.UI;
 internal sealed class DiagnosticsView : UserControl
 {
   private readonly VirtualModelGrid<LintDiagnostic> _grid = new();
-  private readonly ComboBox _severity = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 115 };
-  private readonly ComboBox _category = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 155 };
+  private readonly ComboBox _severity = new() { DropDownStyle = ComboBoxStyle.DropDownList, FormattingEnabled = true, Width = 115 };
+  private readonly ComboBox _category = new() { DropDownStyle = ComboBoxStyle.DropDownList, FormattingEnabled = true, Width = 155 };
   private readonly System.Windows.Forms.Label _summary = new()
   {
-    Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Text = "No solution analyzed."
+    Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true,
+    Text = "프로젝트 탐색기에서 프로젝트를 선택하세요."
   };
   private readonly TextBox _details = new()
   {
@@ -18,14 +19,23 @@ internal sealed class DiagnosticsView : UserControl
     BorderStyle = BorderStyle.FixedSingle
   };
   private LintResult? _result;
+  private string _projectName = "";
 
   public DiagnosticsView()
   {
     Dock = DockStyle.Fill;
     Padding = new Padding(8);
-    _severity.Items.Add("All levels");
+    _severity.Format += (_, args) =>
+    {
+      if (args.ListItem is LintSeverity value) args.Value = FormatSeverity(value);
+    };
+    _category.Format += (_, args) =>
+    {
+      if (args.ListItem is LintCategory value) args.Value = FormatCategory(value);
+    };
+    _severity.Items.Add("전체 수준");
     _severity.Items.AddRange(Enum.GetValues<LintSeverity>().Cast<object>().ToArray());
-    _category.Items.Add("All categories");
+    _category.Items.Add("전체 분류");
     _category.Items.AddRange(Enum.GetValues<LintCategory>().Cast<object>().ToArray());
     _severity.SelectedIndex = _category.SelectedIndex = 0;
 
@@ -37,13 +47,14 @@ internal sealed class DiagnosticsView : UserControl
     filters.Controls.Add(_severity);
     filters.Controls.Add(_category);
 
-    _grid.AddColumn("Level", item => item.Severity.ToString(), 65, 65);
-    _grid.AddColumn("Rule", item => item.RuleId, 75, 75);
-    _grid.AddColumn("Category", item => item.Category.ToString(), 100, 100);
-    _grid.AddColumn("Finding", item => item.Title, 230, 160);
-    _grid.AddColumn("Project", item => item.ProjectName, 105, 95);
-    _grid.AddColumn("File", item => item.FilePath ?? "", 135, 100);
-    _grid.AddColumn("Line", item => item.SourceLocation?.StartLine, 50, 50);
+    _grid.ColumnHeadersDefaultCellStyle.WrapMode = DataGridViewTriState.False;
+    _grid.AddColumn("수준", item => FormatSeverity(item.Severity), 65, 75);
+    _grid.AddColumn("규칙", item => item.RuleId, 75, 75);
+    _grid.AddColumn("분류", item => FormatCategory(item.Category), 100, 100);
+    _grid.AddColumn("진단 내용", item => item.Title, 230, 160);
+    _grid.AddColumn("프로젝트", item => item.ProjectName, 105, 95);
+    _grid.AddColumn("파일", item => item.FilePath ?? "", 135, 100);
+    _grid.AddColumn("줄", item => item.SourceLocation?.StartLine, 50, 50);
     _grid.SelectionChanged += (_, _) => ShowSelectedDetails();
     _grid.CurrentCellChanged += (_, _) => ShowSelectedDetails();
     _grid.ItemActivated += item => DiagnosticActivated?.Invoke(item);
@@ -65,10 +76,21 @@ internal sealed class DiagnosticsView : UserControl
 
   public event Action<LintDiagnostic>? DiagnosticActivated;
 
-  public void ShowResult(LintResult result)
+  public void ShowResult(string projectName, LintResult result)
   {
+    _projectName = projectName;
     _result = result;
     RefreshItems();
+  }
+
+  public void ClearResult(string message = "프로젝트 탐색기에서 프로젝트를 선택하세요.")
+  {
+    _result = null;
+    _projectName = "";
+    _grid.SetItems(Array.Empty<LintDiagnostic>());
+    _grid.CurrentCell = null;
+    _details.Clear();
+    _summary.Text = message;
   }
 
   private void RefreshItems()
@@ -80,9 +102,9 @@ internal sealed class DiagnosticsView : UserControl
     _grid.SetItems(items);
     _grid.CurrentCell = null;
     _details.Clear();
-    _summary.Text = $"{items.Length} / {_result.Diagnostics.Count} findings; {_result.ProjectCount} project(s)" +
-        (_result.IncompleteProjectCount > 0 ? $"; {_result.IncompleteProjectCount} incomplete" : "") +
-        (_result.Diagnostics.Count == 0 ? ". No findings from the v1 rules." : "");
+    _summary.Text = $"{_projectName} | 진단 {_result.Diagnostics.Count}건 중 {items.Length}건 표시" +
+        (_result.IncompleteProjectCount > 0 ? $" | 분석 불완전: {_result.IncompleteProjectCount}개 프로젝트" : "") +
+        (_result.Diagnostics.Count == 0 ? " | 현재 v1 규칙에서 발견된 항목이 없습니다." : "");
   }
 
   private void ShowSelectedDetails()
@@ -90,13 +112,30 @@ internal sealed class DiagnosticsView : UserControl
     var item = _grid.CurrentCell is { } cell ? _grid.GetItem(cell.RowIndex) : null;
     _details.Text = item is null ? "" : string.Join(Environment.NewLine,
     [
-      $"{item.RuleId} | {item.Severity} | {item.Category}",
+      $"{item.RuleId} | {FormatSeverity(item.Severity)} | {FormatCategory(item.Category)}",
       item.Title,
-      $"Assessment: {(item.Assessment == LintAssessment.ManualReview ? "Manual review required" : "Pattern detected")}",
-      "", item.Message, "", "Recommendation", item.Recommendation,
-      "", $"Project: {item.ProjectName}", $"Symbol: {item.SymbolId ?? "(project)"}",
-      $"Location: {item.FilePath ?? "(unknown)"}:{item.SourceLocation?.StartLine.ToString() ?? "?"}",
-      $"Reference: {item.HelpLink ?? "CodeAtlas v1 rule"}"
+      $"판단: {(item.Assessment == LintAssessment.ManualReview ? "직접 검토 필요" : "해당 패턴 발견")}",
+      "", item.Message, "", "권장 조치", item.Recommendation,
+      "", $"프로젝트: {item.ProjectName}", $"심볼 ID: {item.SymbolId ?? "(프로젝트 전체)"}",
+      $"위치: {item.FilePath ?? "(알 수 없음)"}:{item.SourceLocation?.StartLine.ToString() ?? "?"}",
+      $"참고 자료: {item.HelpLink ?? "CodeAtlas v1 진단 규칙"}"
     ]);
   }
+
+  private static string FormatSeverity(LintSeverity severity) => severity switch
+  {
+    LintSeverity.Info => "정보",
+    LintSeverity.Warning => "경고",
+    _ => severity.ToString()
+  };
+
+  private static string FormatCategory(LintCategory category) => category switch
+  {
+    LintCategory.AnalysisCoverage => "분석 범위",
+    LintCategory.Reliability => "안정성",
+    LintCategory.Security => "보안",
+    LintCategory.Interop => "COM 상호 운용",
+    LintCategory.Maintainability => "유지보수성",
+    _ => category.ToString()
+  };
 }

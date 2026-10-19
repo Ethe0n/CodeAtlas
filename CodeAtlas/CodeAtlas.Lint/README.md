@@ -1,10 +1,14 @@
 # CodeAtlas.Lint v1
 
 Model-based diagnostics for VB.NET / CATIA automation projects. This library
-consumes an existing `SolutionStructure`; it never opens, compiles, executes, or
+consumes an existing `ProjectStructure` (or `SolutionStructure` for explicit batch callers); it never opens, compiles, executes, or
 rewrites the target solution. `CodeAtlas.Roslyn` does not reference this project.
-The WinForms UI runs lint once after solution analysis, off the UI thread, and
-keeps the results in its Diagnostics tab.
+The WinForms UI runs `AnalyzeProject` off the UI thread only when Diagnostics is
+opened for a selected project. Selecting a type, method, field, or group uses its
+owning project. Unselected projects are not linted. Results are cached by
+ProjectId for the current loaded solution, never mixed between projects, and
+cleared on solution replacement. Switching projects cancels an unfinished lint
+task; a late result cannot overwrite the newly selected project's rows.
 
 ## Rules
 
@@ -30,6 +34,10 @@ ProjectId, SymbolId, owner Type SymbolId, original file/line span, and a referen
 link. The UI navigates by ProjectId plus SymbolId; display names are not identity.
 Catch locations refer to the first available source location in the catch region,
 not necessarily the Catch keyword itself.
+
+Diagnostic titles, explanations, and recommendations are provided in Korean.
+The UI also uses Korean severity/category labels, filters, and status messages;
+rule IDs, enum values, SymbolIds, file paths, and API names remain unchanged.
 
 Generated methods/fields are excluded using existing flags. Identical repeated
 records at the same source site are deduplicated, but separate call sites remain

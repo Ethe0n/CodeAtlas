@@ -39,6 +39,11 @@ var solution = new SolutionStructure("Example.sln", [project]);
 var analyzer = new LintAnalyzer();
 var before = JsonSerializer.Serialize(solution);
 var result = analyzer.Analyze(solution);
+var projectResult = analyzer.AnalyzeProject(project);
+Check(projectResult.ProjectCount == 1 && projectResult.Diagnostics.All(item => item.ProjectId == project.Id),
+    "Project API analyzes only its project input");
+Check(JsonSerializer.Serialize(projectResult) == JsonSerializer.Serialize(result),
+    "Project and single-project solution APIs reuse the same rules");
 Check(result.Diagnostics.Count == 7, "Expected raw findings from six rules (two process call sites)");
 Check(result.Diagnostics.Count(item => item.RuleId == "CAL2002") == 2, "Distinct call sites remain distinct");
 Check(result.Diagnostics.Single(item => item.RuleId == "CAL1001").Assessment == LintAssessment.ManualReview, "Resume Next is a review, not a proven vulnerability");
@@ -103,7 +108,21 @@ var manyConditions = analyzer.Analyze(solution with { Projects = [project with {
         new ControlFlowEdge(index, 100, "ConditionalFalse", "condition")
     }).ToArray()
 }] }] });
-Check(manyConditions.Diagnostics.Single(item => item.RuleId == "CAL3002").Message.Contains("13 conditional"), "Conditions count branch source blocks, not edges");
+Check(manyConditions.Diagnostics.Single(item => item.RuleId == "CAL3002").Message.Contains("13개"), "Conditions count branch source blocks, not edges");
+var localizedFindings = result.Diagnostics
+    .Concat(partial.Diagnostics.Where(item => item.RuleId == "CAL0001"))
+    .Concat(manyConditions.Diagnostics.Where(item => item.RuleId == "CAL3002")).ToArray();
+Check(localizedFindings.Select(item => item.RuleId).Distinct().Count() == 8 && localizedFindings.All(item =>
+        HasKorean(item.Title) && HasKorean(item.Message) && HasKorean(item.Recommendation)),
+    "All eight rules provide Korean titles, explanations, and recommendations");
+Check(partial.Diagnostics.Single(item => item.RuleId == "CAL0001").Message.Contains("부분 분석") &&
+    failed.Diagnostics.Single(item => item.RuleId == "CAL0001").Message.Contains("분석 실패") &&
+    noFlow.Diagnostics.Single(item => item.RuleId == "CAL0001").Message.Contains("전체 분석"),
+    "Analysis status is localized without changing coverage rules");
+Check(result.Diagnostics.Where(item => item.RuleId.StartsWith("CAL2", StringComparison.Ordinal)).All(item =>
+        item.Message.Contains("호출 대상: M:", StringComparison.Ordinal) &&
+        calls.Any(call => item.Message.EndsWith(call.CalleeMethodSymbolId, StringComparison.Ordinal))),
+    "Korean call explanations preserve original target SymbolIds");
 var overloaded = method with { SymbolId = method.SymbolId + "(System.Int32)" };
 var overloadResult = analyzer.Analyze(solution with { Projects = [project with
 {
@@ -162,6 +181,7 @@ Console.WriteLine($"PASS: {passed} lint checks; sample findings: {sampleResult.D
 
 CallRelation Call(string target, int line) => new(method.SymbolId, method.Name, target, target,
     false, "Framework", "Owner.vb", span with { StartLine = line, EndLine = line });
+bool HasKorean(string text) => text.Any(character => character is >= '\uAC00' and <= '\uD7A3');
 void Check(bool condition, string message)
 {
     if (!condition) throw new InvalidOperationException(message);

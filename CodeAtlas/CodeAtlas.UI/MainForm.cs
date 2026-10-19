@@ -12,7 +12,7 @@ public sealed class MainForm : Form
   private readonly TabPage _overviewTab = new("Overview");
   private readonly TabPage _relationsTab = new("Relations");
   private readonly TabPage _flowTab = new("Flow");
-  private readonly TabPage _diagnosticsTab = new("Diagnostics");
+  private readonly TabPage _diagnosticsTab = new("진단");
   private readonly DiagnosticsView _diagnosticsView = new();
   private readonly Panel _relationsHost = new() { Dock = DockStyle.Fill };
   private readonly Panel _flowHost = new() { Dock = DockStyle.Fill };
@@ -45,6 +45,9 @@ public sealed class MainForm : Form
 
   private SolutionStructure? _solution;
   private CancellationTokenSource? _analysisCancellation;
+  private readonly Dictionary<string, LintResult> _projectDiagnostics = new(StringComparer.Ordinal);
+  private string? _diagnosticsProjectId;
+  private CancellationTokenSource? _diagnosticsCancellation;
   private FieldsNodeContext? _activeFieldsContext;
   private PropertiesNodeContext? _activePropertiesContext;
   private bool _initialSplitterDistanceApplied;
@@ -90,6 +93,7 @@ public sealed class MainForm : Form
     _propertyListView.PropertyActivated += ShowPropertyFromList;
     _userInterfaceView.MethodSelected += SelectMethodNodeBySymbolId;
     _diagnosticsView.DiagnosticActivated += SelectDiagnostic;
+    Disposed += (_, _) => CancelProjectDiagnostics();
     _projectSearchView.NodeSelected += node =>
     {
       node.EnsureVisible();
@@ -252,11 +256,9 @@ public sealed class MainForm : Form
       var analyzer = new VbSolutionAnalyzer();
       var progress = new Progress<SolutionAnalysisProgress>(UpdateAnalysisProgress);
       var solution = await analyzer.AnalyzeAsync(dialog.FileName, cancellation.Token, progress, trustProjects: true);
-      _statusLabel.Text = "Running diagnostics...";
-      var lintResult = await Task.Run(() => new LintAnalyzer().Analyze(solution, cancellation.Token), cancellation.Token);
       _solution = solution;
+      ResetProjectDiagnostics();
       PopulateProjectExplorer(_solution);
-      _diagnosticsView.ShowResult(lintResult);
       var partialProjects = _solution.Projects.Count(project => project.AnalysisStatus == ProjectAnalysisStatus.Partial);
       var failedProjects = _solution.Projects.Count(project => project.AnalysisStatus == ProjectAnalysisStatus.Failed);
       _statusLabel.Text = partialProjects == 0 && failedProjects == 0
@@ -660,6 +662,7 @@ public sealed class MainForm : Form
       return;
     }
 
+    UpdateProjectDiagnostics();
     if (_detailsTabs.SelectedTab == _relationsTab && _pendingRelations is { } showRelations)
     {
       _pendingRelations = null;
@@ -670,6 +673,80 @@ public sealed class MainForm : Form
       _pendingFlow = null;
       showFlow();
     }
+  }
+
+  private void UpdateProjectDiagnostics()
+  {
+    ProjectStructure? project = null;
+    for (var node = _projectExplorer.SelectedNode; node is not null; node = node.Parent)
+    {
+      if (node.Tag is ProjectStructure owner)
+      {
+        project = owner;
+        break;
+      }
+    }
+
+    var changed = _diagnosticsProjectId != project?.Id;
+    if (changed)
+    {
+      CancelProjectDiagnostics();
+      _diagnosticsProjectId = project?.Id;
+      _diagnosticsView.ClearResult(project is null
+          ? "프로젝트 탐색기에서 프로젝트를 선택하세요."
+          : $"{project.Name} | 아직 진단하지 않았습니다.");
+    }
+
+    if (project is null) return;
+    if (_projectDiagnostics.TryGetValue(project.Id, out var cached))
+    {
+      if (changed) _diagnosticsView.ShowResult(project.Name, cached);
+      return;
+    }
+
+    if (_detailsTabs.SelectedTab == _diagnosticsTab && _diagnosticsCancellation is null)
+      AnalyzeProjectDiagnostics(project);
+  }
+
+  private async void AnalyzeProjectDiagnostics(ProjectStructure project)
+  {
+    using var cancellation = new CancellationTokenSource();
+    _diagnosticsCancellation = cancellation;
+    _diagnosticsView.ClearResult($"{project.Name} | 진단 중...");
+    try
+    {
+      var result = await Task.Run(() => new LintAnalyzer().AnalyzeProject(project, cancellation.Token), cancellation.Token);
+      if (IsDisposed || cancellation.IsCancellationRequested ||
+          !ReferenceEquals(_diagnosticsCancellation, cancellation) || _diagnosticsProjectId != project.Id)
+        return;
+      _projectDiagnostics[project.Id] = result;
+      _diagnosticsView.ShowResult(project.Name, result);
+    }
+    catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+    catch (Exception exception)
+    {
+      if (!IsDisposed && ReferenceEquals(_diagnosticsCancellation, cancellation))
+        _diagnosticsView.ClearResult($"{project.Name} | 진단 실패: {exception.Message}");
+    }
+    finally
+    {
+      if (ReferenceEquals(_diagnosticsCancellation, cancellation)) _diagnosticsCancellation = null;
+    }
+  }
+
+  private void CancelProjectDiagnostics()
+  {
+    var cancellation = _diagnosticsCancellation;
+    _diagnosticsCancellation = null;
+    cancellation?.Cancel();
+  }
+
+  private void ResetProjectDiagnostics()
+  {
+    CancelProjectDiagnostics();
+    _diagnosticsProjectId = null;
+    _projectDiagnostics.Clear();
+    _diagnosticsView.ClearResult();
   }
 
   private void ShowClassOverview(TypeNodeContext context)
